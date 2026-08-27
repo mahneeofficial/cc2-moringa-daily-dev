@@ -63,7 +63,7 @@ def login():
         return jsonify({"error": "Username and password are required"}), 400
     user =  User.query.filter_by(Username=username).first()
 
-    if not user or user.authenticate(password):
+    if not user or not user.authenticate(password):
         return jsonify({"error": " Invalid Username or password"}), 401
     
     if not user.IsActive:
@@ -81,7 +81,28 @@ def login():
         },
         "message": "Login successful"
     }), 200
->#--------------------------------logout----------------------
+#-------------------------------- Forgot password-----------------
+@auth_bp.post("/forgot-password")
+def forgot_password():
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "No input data provided"}),400
+    
+    email = data.get("email")
+    if not email:
+        return jsonify({"error": "Email is required"}),400
+
+    user=User.query.filter_by(Email=email).first()
+
+    if not user:
+        return jsonify({"error": "No account found with that email"}),404
+
+    return jsonify({
+        "message": "Password reset request received"
+    }),200    
+
+#--------------------------------logout----------------------
 @auth_bp.post("/logout")
 def logout():
     return jsonify({"message": "Logout successful."}), 200
