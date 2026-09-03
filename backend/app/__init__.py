@@ -1,39 +1,57 @@
 import os
-from flask import Flask
-from flask_cors import CORS
 from datetime import timedelta
+from flask import Flask, send_from_directory
+from flask_cors import CORS
+
 from config import DevelopmentConfig, config_by_name
-from app.extensions import db, jwt, migrate
+from app.extensions import db, jwt, migrate, bcrypt, ma
 
 
 def create_app(config_name=None):
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder="../static")
+    app.url_map.strict_slashes = False
 
-    # Load configuration from config.py
+    # Load configuration
     if not config_name:
         config_name = os.getenv("FLASK_ENV", "development")
 
     config_class = config_by_name.get(config_name, DevelopmentConfig)
     app.config.from_object(config_class)
 
-    # Fallback default if DATABASE_URL is missing in .env
+    # Fallback default database URI
     if not app.config.get("SQLALCHEMY_DATABASE_URI"):
         app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + os.path.join(
             app.root_path, "app.db"
         )
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=5)    
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=5)
 
-    # Initialize Flask Extensions
+    # Global CORS setup (handles preflight OPTIONS automatically)
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}},
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    )
+
+    # Initialize Extensions
     db.init_app(app)
     jwt.init_app(app)
     migrate.init_app(app, db)
-    CORS(app,
-    resources={r"/api/*": {"origins": "*"}},
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
-    supports_credentials=True,)
+    bcrypt.init_app(app)
+    ma.init_app(app)
 
-    # Import Blueprints matching all files in app/routes/
+    # Serve uploaded static media files
+    @app.route("/static/uploads/<path:filename>")
+    def serve_upload(filename):
+        upload_dir = os.path.join(app.root_path, "..", "static", "uploads")
+        return send_from_directory(upload_dir, filename)
+
+    # Import models within application context
+    with app.app_context():
+        from app import models
+
+    # Import route Blueprints from app/routes/
     from app.routes.admin import admin_bp
     from app.routes.auth_profile import auth_profile_bp
     from app.routes.categories import categories_bp
@@ -44,22 +62,27 @@ def create_app(config_name=None):
     from app.routes.notifications import notifications_bp
     from app.routes.reports import reports_bp
     from app.routes.subscriptions import subscriptions_bp
+    from app.routes.ai_routes import ai_bp
 
-    # Register Blueprints with clean API URL prefixes
-    app.register_blueprint(auth_profile_bp, url_prefix="/api")  # Routes in auth_profile can now handle /profiles/me or /users/me
+    # Register Blueprints
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
+    app.register_blueprint(auth_profile_bp, url_prefix="/api/auth")
     app.register_blueprint(categories_bp, url_prefix="/api/categories")
     app.register_blueprint(content_bp, url_prefix="/api/content")
+    app.register_blueprint(ai_bp, url_prefix="/api/ai")
     app.register_blueprint(comments_bp, url_prefix="/api")
-    app.register_blueprint(comment_reactions_bp, url_prefix="/api")
     app.register_blueprint(interactions_bp, url_prefix="/api")
-    
-    # Updated prefixes to match frontend calls:
-    app.register_blueprint(notifications_bp, url_prefix="/api/me/notifications")
-    app.register_blueprint(reports_bp, url_prefix="/api/reports")
-    app.register_blueprint(subscriptions_bp, url_prefix="/api/subscriptions")
-    # Ensure database tables exist upon app startup
-    with app.app_context():
-        db.create_all()
+    app.register_blueprint(
+        notifications_bp,
+        url_prefix="/api/users/me/notifications"
+    )
+    app.register_blueprint(subscriptions_bp, url_prefix="/api")
+    app.register_blueprint(comment_reactions_bp, url_prefix="/api")
+    app.register_blueprint(reports_bp, url_prefix="/api")
+
+    # Root route
+    @app.get("/")
+    def index():
+        return {"Moringa School Dev. "}, 200
 
     return app
