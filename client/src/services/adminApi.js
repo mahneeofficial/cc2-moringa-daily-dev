@@ -1,59 +1,53 @@
-import api from "./api";
+import apiRequest from "./api";
 
-// GET /api/users
+// NOTE: this used to call `api.get(...)` on the fetch-based api.js wrapper
+// (which has no .get/.post helpers) and pointed at URLs that don't exist on
+// the backend. Everything now goes through apiRequest + the real /api/admin
+// routes.
+
+// GET /api/admin/users
 export async function listUsers() {
-  const response = await api.get("/users");
-  return response.data;
+  return apiRequest("/api/admin/users");
 }
 
-// POST /api/users
-export async function addUser({ username, email, role }) {
-  const response = await api.post("/users", {
-    username,
-    email,
-    role,
+// POST /api/admin/users
+export async function addUser({ username, email, password, role }) {
+  return apiRequest("/api/admin/users", {
+    method: "POST",
+    body: JSON.stringify({ username, email, password, role }),
   });
-
-  return response.data;
 }
 
-// PATCH /api/users/:id/deactivate
+// PATCH /api/admin/users/:id/status (toggles active/deactivated)
 export async function toggleUserActive(id) {
-  const response = await api.patch(`/users/${id}/deactivate`);
-  return response.data;
+  return apiRequest(`/api/admin/users/${id}/status`, {
+    method: "PATCH",
+  });
 }
 
-// GET /api/content?status=pending
+// GET /api/admin/pending-content — returns a direct array
 export async function listPendingContent() {
-  const response = await api.get("/content", {
-    params: {
-      status: "pending",
-    },
-  });
-
-  return response.data;
+  return apiRequest("/api/admin/pending-content");
 }
 
 // GET /api/reports
 export async function listReports() {
-  const response = await api.get("/reports");
-  return response.data;
+  const data = await apiRequest("/api/reports");
+  return Array.isArray(data) ? data : data?.items ?? [];
 }
 
 // PATCH /api/reports/:id
-export async function resolveReport(id, status = "resolved") {
-  const response = await api.patch(`/reports/${id}`, {
-    status,
+export async function resolveReport(id, status = "Resolved") {
+  return apiRequest(`/api/reports/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
   });
-
-  return response.data;
 }
 
 // POST /api/content/:id/report
-export async function reportContent(contentId, reason) {
-  const response = await api.post(`/content/${contentId}/report`, {
-    reason,
+export async function reportContent(contentId, userId, reason) {
+  return apiRequest(`/api/content/${contentId}/report`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
-
-  return response.data;
 }

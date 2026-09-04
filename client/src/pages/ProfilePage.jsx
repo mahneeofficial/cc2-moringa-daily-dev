@@ -20,13 +20,15 @@ export default function ProfilePage() {
     const loadProfile = async () => {
       try {
         const data = await fetchProfile();
+        // Support both the flat response and a nested { profile: {... } } one
+        const src = { ...data, ...(data?.profile || {}) };
         setProfile({
-          username: data.username || '',
-          email: data.email || '',
-          bio: data.bio || '',
-          skills: data.skills || '',
-          github_url: data.github_url || '',
-          interests: data.interests || '',
+          username: src.username || '',
+          email: src.email || '',
+          bio: src.bio || '',
+          skills: src.skills || '',
+          github_url: src.github_url || src.github_profile || '',
+          interests: src.interests || '',
         });
       } catch (err) {
         setStatusMsg({ type: 'error', text: err.message });
@@ -48,6 +50,18 @@ export default function ProfilePage() {
         github_url: profile.github_url,
         interests: profile.interests,
       });
+      // Re-read from the server so what you see is exactly what was saved
+      // (skills & GitHub URL used to "disappear" after a reload because the
+      // saved state never round-tripped).
+      const data = await fetchProfile();
+      const src = { ...data, ...(data?.profile || {}) };
+      setProfile((p) => ({
+        ...p,
+        bio: src.bio || '',
+        skills: src.skills || '',
+        github_url: src.github_url || src.github_profile || '',
+        interests: src.interests || '',
+      }));
       setStatusMsg({ type: 'success', text: 'Profile updated successfully!' });
       setIsEditing(false);
     } catch (err) {

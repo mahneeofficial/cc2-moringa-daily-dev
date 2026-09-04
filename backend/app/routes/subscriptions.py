@@ -1,6 +1,8 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
+from app.utils import iso_utc
+
 from app.extensions import db
 from app.models import Category, Subscription
 
@@ -130,7 +132,7 @@ def get_my_subscriptions():
                 if hasattr(sub, "category")
                 else None,
                 "created_at": (
-                    sub.CreatedAt.isoformat() if sub.CreatedAt else None
+                    iso_utc(sub.CreatedAt) if sub.CreatedAt else None
                 ),
             }
             for sub in subscriptions

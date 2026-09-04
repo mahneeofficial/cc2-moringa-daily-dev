@@ -16,7 +16,9 @@ export default function NavDrawer({ open, onClose }) {
   const isPreview = useSelector(selectIsPreview);
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const isAdmin = user?.role === "admin";
+  // Backend stores "Admin" (capital A) — compare case-insensitively so the
+  // admin section actually shows for real admins.
+  const isAdmin = String(user?.role || "").toLowerCase() === "admin";
 
   function handleLogout() {
     dispatch(logout());

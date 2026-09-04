@@ -51,8 +51,10 @@ export default function Topbar({ search, onSearchChange }) {
           <button
             onClick={() => navigate("/create")}
             className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition shrink-0"
+            aria-label="Create a post"
+            title="Create a post"
           >
-            <Plus className="w-4 h-4" strokeWidth={2.5} /> Write
+            <Plus className="w-4 h-4" strokeWidth={2.5} /> Create
           </button>
 
           <button

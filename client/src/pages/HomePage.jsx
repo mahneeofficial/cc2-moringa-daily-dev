@@ -31,39 +31,43 @@ export default function HomePage() {
   };
 
   // Fetch categories from backend database
-  useEffect(() => {
-    axios.get('http://localhost:5001/api/categories')
-      .then((res) => setCategories(res.data))
-      .catch((err) => console.error("Error fetching categories:", err));
-  }, []);
+ useEffect(() => {
+  axios.get('http://localhost:5001/api/categories')
+    .then((res) => {
+      const catArray = Array.isArray(res.data) ? res.data : (res.data?.categories || res.data?.items || []);
+      setCategories(catArray);
+    })
+    .catch((err) => console.error("Error fetching categories:", err));
+}, []);
 
   // Fetch content feed from backend database (Checks all possible token keys)
-  useEffect(() => {
-    const url = currentTab.toLowerCase() === 'all'
-      ? 'http://localhost:5001/api/content'
-      : `http://localhost:5001/api/content?category=${currentTab}`;
+  // Fetch content feed from backend database
+useEffect(() => {
+  const url = currentTab.toLowerCase() === 'all'
+    ? 'http://localhost:5001/api/content'
+    : `http://localhost:5001/api/content?category=${currentTab}`;
 
-    const token = 
-      localStorage.getItem('token') || 
-      localStorage.getItem('access_token') || 
-      localStorage.getItem('jwt') || 
-      localStorage.getItem('accessToken');
+  const token = 
+    localStorage.getItem('token') || 
+    localStorage.getItem('access_token') || 
+    localStorage.getItem('jwt') || 
+    localStorage.getItem('accessToken');
 
-    axios.get(url, {
-      headers: {
-        ...(token && { Authorization: `Bearer ${token}` })
-      }
+  axios.get(url, {
+    headers: {
+      ...(token && { Authorization: `Bearer ${token}` })
+    }
+  })
+    .then((res) => {
+      const itemsArray = res.data?.items || (Array.isArray(res.data) ? res.data : []);
+      setPosts(itemsArray);
+      setLoading(false);
     })
-      .then((res) => {
-        setPosts(res.data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error fetching content feed:", err);
-        setLoading(false);
-      });
-  }, [currentTab]);
-
+    .catch((err) => {
+      console.error("Error fetching content feed:", err);
+      setLoading(false);
+    });
+}, [currentTab]);
   // Filter posts based on search input
   const filteredPosts = posts.filter((post) => {
     const title = post.Title || post.title || '';

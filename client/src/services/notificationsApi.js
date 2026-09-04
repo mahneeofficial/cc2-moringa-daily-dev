@@ -5,13 +5,14 @@ export async function listNotifications() {
 }
 
 export async function markRead(notificationId) {
-  return apiRequest(`/api/notifications/${notificationId}/read`, {
+  return apiRequest(`/api/users/me/notifications/${notificationId}/read`, {
     method: "PATCH",
   });
 }
 
 export async function markAllRead() {
-  return apiRequest("/api/notifications/read-all", {
+  return apiRequest("/api/users/me/notifications/read-all", {
     method: "PATCH",
   });
 }
+

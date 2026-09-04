@@ -1,7 +1,9 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from app import db
+from app.utils import iso_utc
+
+from app.extensions import db
 from app.models import Comment, Content, User
 
 comments_bp = Blueprint("comments", __name__)
@@ -37,7 +39,7 @@ def _build_comment_tree(comment):
     """Recursively serialize a comment and all its nested replies."""
     author_info = _serialize_author(getattr(comment, "author", None))
     created_at_iso = (
-        comment.CreatedAt.isoformat() if getattr(comment, "CreatedAt", None) else None
+        iso_utc(comment.CreatedAt) if getattr(comment, "CreatedAt", None) else None
     )
     created_at_fmt = (
         comment.CreatedAt.strftime("%d %b %Y %H:%M")

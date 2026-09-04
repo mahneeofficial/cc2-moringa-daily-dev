@@ -79,7 +79,7 @@ function ContentQueueTab() {
                 <span className="text-[11px] font-mono uppercase text-muted">{item.category?.name}</span>
                 <span
                   className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 border ${
-                    item.status === "flagged" ? "text-red-600 border-red-300" : "text-amber-600 border-amber-400"
+                    item.status === "Archived" || item.status === "flagged" ? "text-red-600 border-red-300" : "text-amber-600 border-amber-400"
                   }`}
                 >
                   {item.status}
@@ -87,7 +87,7 @@ function ContentQueueTab() {
               </div>
               <h3 className="font-display font-semibold text-navy">{item.title}</h3>
               <p className="text-xs text-muted mt-1">
-                by {item.author?.username} · {timeAgo(item.createdAt)}
+                by {item.author?.username || item.author} · {timeAgo(item.createdAt)}
               </p>
             </div>
             <div className="flex gap-2 shrink-0">
@@ -205,7 +205,7 @@ function ReportsTab() {
               <p className="text-xs text-muted mt-1">Reported by {r.reporter?.username} · {timeAgo(r.createdAt)}</p>
               <p className="text-xs text-muted mt-2 italic">"{r.reason}"</p>
             </div>
-            {r.status === "open" ? (
+            {r.status && r.status.toLowerCase() !== "resolved" ? (
               <button
                 onClick={() => handleResolve(r.id)}
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"

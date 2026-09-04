@@ -1,9 +1,11 @@
 import { createSlice } from "@reduxjs/toolkit";
 
 const storedUser = localStorage.getItem("user");
+const storedToken = localStorage.getItem("token");
 
 const initialState = {
   user: storedUser ? JSON.parse(storedUser) : null,
+  token: storedToken || null,
   previewRole: null,
 };
 
@@ -23,12 +25,36 @@ const authSlice = createSlice({
       }
     },
 
+    setToken(state, action) {
+      state.token = action.payload;
+
+      if (action.payload) {
+        localStorage.setItem("token", action.payload);
+      } else {
+        localStorage.removeItem("token");
+      }
+    },
+
+    setCredentials(state, action) {
+      const { user, token } = action.payload || {};
+      state.user = user || null;
+      state.token = token || null;
+
+      if (user) {
+        localStorage.setItem("user", JSON.stringify(user));
+      }
+      if (token) {
+        localStorage.setItem("token", token);
+      }
+    },
+
     setPreviewRole(state, action) {
       state.previewRole = action.payload;
     },
 
     logout(state) {
       state.user = null;
+      state.token = null;
       state.previewRole = null;
 
       localStorage.removeItem("token");
@@ -37,6 +63,7 @@ const authSlice = createSlice({
 
     hydrateFromStorage(state) {
       const storedUser = localStorage.getItem("user");
+      const storedToken = localStorage.getItem("token");
 
       if (storedUser) {
         try {
@@ -46,12 +73,18 @@ const authSlice = createSlice({
           localStorage.removeItem("user");
         }
       }
+
+      if (storedToken) {
+        state.token = storedToken;
+      }
     },
   },
 });
 
 export const {
   setUser,
+  setToken,
+  setCredentials,
   setPreviewRole,
   logout,
   hydrateFromStorage,
@@ -60,13 +93,17 @@ export const {
 export default authSlice.reducer;
 
 export function selectCurrentUser(state) {
-  return state.auth.user;
+  return state.auth?.user;
+}
+
+export function selectCurrentToken(state) {
+  return state.auth?.token || localStorage.getItem("token");
 }
 
 export function selectIsPreview(state) {
-  return Boolean(state.auth.previewRole);
+  return Boolean(state.auth?.previewRole);
 }
 
 export function selectPreviewRole(state) {
-  return state.auth.previewRole;
+  return state.auth?.previewRole;
 }

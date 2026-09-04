@@ -1,5 +1,5 @@
 import { useDispatch, useSelector } from "react-redux";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Check, Plus } from "lucide-react";
 import { toggleCategorySubscription } from "../features/categories/categoriesSlice";
 import { selectCurrentUser } from "../features/auth/authSlice";
@@ -10,6 +10,7 @@ export default function Categories() {
   const categories = useSelector((state) => state.categories.items);
   const subscribedIds = useSelector((state) => state.categories.subscribedIds);
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
   return (
     <div className="space-y-6">
@@ -33,7 +34,13 @@ export default function Categories() {
                   <p className="text-xs text-muted mt-1">{cat.description}</p>
                 </div>
                 <button
-                  onClick={() => dispatch(toggleCategorySubscription({ categoryId: cat.id, userId: user.id }))}
+                  onClick={() => {
+                    if (!user?.id) {
+                      navigate("/login?next=/categories");
+                      return;
+                    }
+                    dispatch(toggleCategorySubscription({ categoryId: cat.id, userId: user.id }));
+                  }}
                   className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition ${
                     subscribed
                       ? "bg-brand-500/10 border-brand-500/40 text-brand-600"

@@ -55,7 +55,10 @@ const categoriesSlice = createSlice({
 
       .addCase(fetchCategories.fulfilled, (state, action) => {
         state.status = "succeeded";
-        state.items = action.payload;
+        const payload = action.payload;
+        state.items = Array.isArray(payload)
+          ? payload
+          : payload?.categories || payload?.items || [];
       })
 
       .addCase(fetchCategories.rejected, (state) => {
@@ -63,9 +66,11 @@ const categoriesSlice = createSlice({
       })
 
       .addCase(fetchSubscriptions.fulfilled, (state, action) => {
-        state.subscribedIds = action.payload.map(
+        const payload = action.payload || [];
+        const items = Array.isArray(payload) ? payload : payload.subscriptions || [];
+        state.subscribedIds = items.map(
           (subscription) =>
-            subscription.category_id ?? subscription.categoryId
+            subscription.category_id ?? subscription.categoryId ?? subscription.CategoryID
         );
       })
 

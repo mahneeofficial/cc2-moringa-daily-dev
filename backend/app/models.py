@@ -19,6 +19,7 @@ class User(db.Model):
     Email = db.Column(db.String(200), unique=True, nullable=False)
     _Password_Hash = db.Column(db.String, nullable=False)
     Role = db.Column(db.String(50), nullable=True)
+    is_admin = db.Column(db.Boolean, default=False)
     IsActive = db.Column(db.Boolean, default=True)
     CreatedAt = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -60,6 +61,8 @@ class Profile(db.Model):
     Bio = db.Column(db.Text, nullable=True)
     ProfileImage = db.Column(db.String(255), nullable=True)
     Interests = db.Column(db.Text, nullable=True)
+    Skills = db.Column(db.Text, nullable=True)
+    GithubURL = db.Column(db.String(255), nullable=True)
     CreatedAt = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     UpdatedAt = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -86,8 +89,13 @@ class Content(db.Model):
     Description = db.Column(db.Text, nullable=True)
     ContentType = db.Column(db.String(50), nullable=True)
     ContentURL = db.Column(db.String(255), nullable=True)
+    ThumbnailURL = db.Column(db.String(500), nullable=True)
     Status = db.Column(db.String(50), nullable=True)
     IsApproved = db.Column(db.Boolean, default=False)
+    Summary = db.Column(db.Text, nullable=True)
+    Duration = db.Column(db.String(50), nullable=True)
+    LikesCount = db.Column(db.Integer, default=0)
+    RejectionReason = db.Column(db.Text, nullable=True)
     CreatedAt = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     UpdatedAt = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -104,7 +112,7 @@ class Content(db.Model):
 
     __table_args__ = (
         CheckConstraint(
-            '\"Status\" IN (\'Draft\', \'Published\', \'Archived\')',
+            '\"Status\" IN (\'Draft\', \'Pending\', \'Published\', \'Archived\')',
             name='check_valid_content_status'
         ),
         CheckConstraint(

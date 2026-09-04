@@ -15,6 +15,9 @@ export default function SignUpPage() {
   // Password Checklist Dismissal State
   const [showChecklist, setShowChecklist] = useState(true);
 
+  // Account type: "user" (learner), "tech_writer" or "Admin"
+  const [role, setRole] = useState('user');
+
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
@@ -59,12 +62,13 @@ export default function SignUpPage() {
 
     setIsLoading(true);
     try {
-      const data = await signUpUser({ username, email, password });
+      const data = await signUpUser({ username, email, password, role });
       localStorage.setItem('token', data.token);
       if (data.user) {
         localStorage.setItem('user', JSON.stringify(data.user));
       }
-      navigate('/');
+      // Admins land on their dashboard, everyone else on the feed
+      navigate(String(data.user?.role || role).toLowerCase() === 'admin' ? '/admin' : '/');
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -196,6 +200,34 @@ export default function SignUpPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
               )}
             </button>
+          </div>
+        </div>
+
+        {/* ACCOUNT TYPE SELECTOR — lets an admin sign up directly */}
+        <div>
+          <label className="block text-xs font-medium text-navy/70 mb-1.5">Account type</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { value: 'user', label: 'Learner', hint: 'Read, react & post' },
+              { value: 'tech_writer', label: 'Tech Writer', hint: 'Publish instantly' },
+              { value: 'Admin', label: 'Admin', hint: 'Full moderation' },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setRole(opt.value)}
+                className={`px-2 py-2.5 rounded-lg border text-center transition ${
+                  role === opt.value
+                    ? 'border-brand-500 bg-brand-500/10'
+                    : 'border-line bg-white hover:border-navy/30'
+                }`}
+              >
+                <span className={`block text-xs font-semibold ${role === opt.value ? 'text-brand-500' : 'text-navy/70'}`}>
+                  {opt.label}
+                </span>
+                <span className="block text-[10px] text-muted mt-0.5">{opt.hint}</span>
+              </button>
+            ))}
           </div>
         </div>
 

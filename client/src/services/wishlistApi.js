@@ -1,7 +1,8 @@
 import apiRequest from "./api";
 
 export async function listWishlist() {
-  return apiRequest("/api/users/me/wishlist");
+  const data = await apiRequest("/api/users/me/wishlist");
+  return Array.isArray(data) ? data : [];
 }
 
 export async function addToWishlist(contentId) {
@@ -13,8 +14,19 @@ export async function addToWishlist(contentId) {
   });
 }
 
+// The DELETE endpoint expects the wishlist ROW id, not the content id —
+// so look the row up first (this was silently 404-ing before).
 export async function removeFromWishlist(contentId) {
-  return apiRequest(`/api/wishlist/${contentId}`, {
+  const items = await listWishlist();
+  const row = items.find(
+    (item) =>
+      String(item.contentId ?? item.content_id ?? item.ContentID) ===
+      String(contentId)
+  );
+
+  const rowId = row ? row.id : contentId;
+
+  return apiRequest(`/api/wishlist/${rowId}`, {
     method: "DELETE",
   });
 }

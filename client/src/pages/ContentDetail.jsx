@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { ThumbsUp, ThumbsDown, Bookmark, Share2, Flag, Video, Headphones, FileText, Check } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Bookmark, Share2, Flag, Video, Headphones, FileText, Check, Sparkles } from "lucide-react";
 import {
   getContent,
   react,
@@ -22,6 +22,7 @@ import RoleBadge from "../components/ui/RoleBadge";
 import CommentThread from "../components/content/CommentThread";
 import MediaPlayer from "../components/content/MediaPlayer";
 import { ContentCardSkeleton } from "../components/ui/Skeleton";
+import { API_BASE_URL } from "../services/api";
 
 const TYPE_ICON = { video: Video, audio: Headphones, article: FileText };
 
@@ -35,6 +36,10 @@ export default function ContentDetail() {
   const [newComment, setNewComment] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // AI Summary State
+  const [summary, setSummary] = useState("");
+  const [summarizing, setSummarizing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,15 +55,13 @@ export default function ContentDetail() {
         setItem(contentItem);
         setComments(commentTree || []);
 
-        // Safe fetch for reaction summary
         try {
-          const summary = await reactionSummary(id);
-          if (summary && !cancelled) setReactionState(summary);
+          const summaryData = await reactionSummary(id);
+          if (summaryData && !cancelled) setReactionState(summaryData);
         } catch (e) {
           console.warn("Could not load reactions summary:", e);
         }
 
-        // Safe fetch for wishlist status (only if logged in)
         if (user?.id) {
           try {
             const wishlistStatus = await isWishlisted(id);
@@ -82,9 +85,12 @@ export default function ContentDetail() {
 
   async function handleReact(type) {
     if (!user) return alert("Please log in to react.");
+    // FIX: this used to call react(id, user.id, type) — the extra user.id
+    // argument shifted "type" out of place and the API received the numeric
+    // user id as the reaction type, so every click failed with a 400.
     try {
-      const summary = await react(id, user.id, type);
-      if (summary) setReactionState(summary);
+      const summaryData = await react(id, type);
+      if (summaryData) setReactionState(summaryData);
     } catch (e) {
       console.error("Reaction failed:", e);
     }
@@ -104,7 +110,7 @@ export default function ContentDetail() {
     try {
       await navigator.clipboard.writeText(window.location.href);
     } catch {
-      // Fallback for missing clipboard API
+      // Fallback
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -119,10 +125,33 @@ export default function ContentDetail() {
     }
   }
 
+  // AI Summarize handler
+  async function handleSummarize() {
+    if (!item) return;
+    setSummarizing(true);
+    const bodyText = item.description || item.body || "";
+    const prompt = `Summarize the following article into 3 concise bullet points:\n\nTitle: ${item.title}\nContent: ${bodyText}`;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ai/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      setSummary(data.result || "Could not generate summary.");
+    } catch (err) {
+      console.error("AI Summarize error:", err);
+      setSummary("Error connecting to AI service.");
+    } finally {
+      setSummarizing(false);
+    }
+  }
+
   async function handleTopLevelComment(e) {
     e.preventDefault();
     if (!newComment.trim() || !user) return;
-    await addComment(id, user.id, newComment.trim());
+    await addComment(id,newComment.trim());
     setNewComment("");
     const tree = await listComments(id);
     setComments(tree);
@@ -130,7 +159,7 @@ export default function ContentDetail() {
 
   async function handleReply(parentId, body) {
     if (!user) return;
-    await addComment(id, user.id, body, parentId);
+    await addComment(id, body, parentId);
     const tree = await listComments(id);
     setComments(tree);
   }
@@ -150,7 +179,6 @@ export default function ContentDetail() {
   if (loading) return <ContentCardSkeleton />;
   if (!item) return <p className="text-muted p-4">This post couldn't be found.</p>;
 
-  // Flexible field mapping between frontend and backend
   const categoryName = item.categories?.[0]?.name || item.category?.name || "General";
   const colors = categoryColor(categoryName);
   const TypeIcon = TYPE_ICON[item.type] || FileText;
@@ -173,20 +201,53 @@ export default function ContentDetail() {
 
         <h1 className="text-3xl font-display font-bold text-navy leading-tight">{item.title}</h1>
 
-        <div className="flex items-center gap-2 mt-4">
-          <Avatar username={authorName} role={item.author?.role} />
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-navy">{authorName}</span>
-              <RoleBadge role={item.author?.role} />
+        <div className="flex items-center justify-between gap-2 mt-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Avatar username={authorName} role={item.author?.role} />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-navy">{authorName}</span>
+                <RoleBadge role={item.author?.role} />
+              </div>
+              <span className="text-[11px] text-muted font-mono">{timeAgo(createdAt)}</span>
             </div>
-            <span className="text-[11px] text-muted font-mono">{timeAgo(createdAt)}</span>
           </div>
+
+          {/* AI Summarize Action Button */}
+          <button
+            onClick={handleSummarize}
+            disabled={summarizing}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-500/10 border border-brand-500/30 text-brand-600 rounded-lg text-xs font-semibold hover:bg-brand-500/20 transition disabled:opacity-50"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-brand-500" />
+            {summarizing ? "Summarizing..." : "Summarize with AI"}
+          </button>
         </div>
       </div>
 
+      {/* AI Key Takeaways Summary Box */}
+      {summary && (
+        <div className="p-4 bg-brand-500/5 border-l-4 border-brand-500 rounded-r-xl space-y-1">
+          <p className="text-xs font-bold uppercase tracking-wider text-brand-600 flex items-center gap-1">
+            <Sparkles className="w-3.5 h-3.5" /> AI Key Takeaways
+          </p>
+          <div className="text-xs text-navy/80 leading-relaxed whitespace-pre-wrap">{summary}</div>
+        </div>
+      )}
+
+      {/* Media: video/audio get the player; any other post with a media
+          URL (image posts, articles with a cover file) renders the image.
+          `url` is now ABSOLUTE from the API, so this works across origins. */}
       {(item.type === "video" || item.type === "audio") && mediaUrl && (
         <MediaPlayer type={item.type} url={mediaUrl} />
+      )}
+      {item.type !== "video" && item.type !== "audio" && mediaUrl && (
+        <img
+          src={mediaUrl}
+          alt={item.title || "Post media"}
+          className="w-full max-h-[540px] object-cover rounded-xl border border-line bg-slate-50"
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+        />
       )}
 
       <div className="prose-content text-navy/70 leading-relaxed whitespace-pre-line text-[15px]">

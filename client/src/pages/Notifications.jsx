@@ -27,7 +27,7 @@ export default function Notifications() {
           <h1 className="text-2xl font-bold text-navy">Notifications</h1>
         </div>
         {unreadCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={() => dispatch(markAllNotificationsRead(user.id))}>
+          <Button variant="ghost" size="sm" onClick={() => user?.id && dispatch(markAllNotificationsRead(user.id))}>
             Mark all as read
           </Button>
         )}

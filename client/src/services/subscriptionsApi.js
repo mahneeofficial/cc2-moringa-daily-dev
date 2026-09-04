@@ -1,7 +1,7 @@
 import apiRequest from "./api";
 
 export async function listSubscriptions() {
-  return apiRequest("/api/users/me/subscriptions");
+  return apiRequest("/api/subscriptions");
 }
 
 export async function subscribe(categoryId) {
