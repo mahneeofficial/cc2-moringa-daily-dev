@@ -128,6 +128,12 @@ def test_cross_user_edit_unauthorized_edge_case(client, auth_context, app):
     assert response.status_code == 403
     assert "Forbidden" in response.get_json()["error"]
 
+    # Example: simple route check in test_routes.py
+def test_get_notifications(client):
+    response = client.get('/api/users/me/notifications')
+    assert response.status_code == 200
+    assert isinstance(response.json, list)
+
     # Verify victim content remains untouched in database
     with app.app_context():
         original_item = db.session.get(Content, victim_post_id)

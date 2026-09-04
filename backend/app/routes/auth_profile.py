@@ -143,62 +143,39 @@ def register():
         db.session.rollback()
         return jsonify({"error": "Failed to create user account", "details": str(e)}), 500
 
-
 @auth_profile_bp.post("/login")
 def login():
-    """Authenticate user and return JWT token
-    ---
-    tags:
-      - Authentication
-    consumes:
-      - application/json
-    produces:
-      - application/json
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - email
-            - password
-          properties:
-            email:
-              type: string
-              example: johndoe@example.com
-            password:
-              type: string
-              example: yourpassword123
-    responses:
-      200:
-        description: Authentication successful
-      400:
-        description: Missing credentials
-      401:
-        description: Invalid credentials
-    """
     data = request.get_json(force=True, silent=True) or request.form.to_dict() or {}
 
-    email = data.get("email")
-    password = data.get("password")
+    # Support email, username, or capitalized variations sent from React
+    identifier = (
+        data.get("email") 
+        or data.get("Email") 
+        or data.get("username") 
+        or data.get("Username")
+    )
+    password = data.get("password") or data.get("Password")
 
-    if not email or not password:
-        return jsonify({"error": "Email and password are required."}), 400
+    if not identifier or not password:
+        return jsonify({"error": "Email/Username and password are required."}), 400
 
-    user = User.query.filter_by(Email=email).first()
+    # Query database by Email OR Username
+    user = User.query.filter(
+        (User.Email == identifier) | (User.Username == identifier)
+    ).first()
+
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
 
-      # Check password logic
+    # Check password logic
     if hasattr(user, "check_password"):
         is_valid_password = user.check_password(password)
     else:
-        # Use bcrypt to safely verify against the database column _Password_Hash
         is_valid_password = bcrypt.check_password_hash(user._Password_Hash, password)
 
     if not is_valid_password:
         return jsonify({"error": "Invalid email or password"}), 401
+
     # Generate JWT token
     from flask_jwt_extended import create_access_token
     access_token = create_access_token(identity=str(user.UserID))
@@ -206,6 +183,7 @@ def login():
     return jsonify({
         "message": "Login successful",
         "access_token": access_token,
+        "token": access_token,  # Extra key to support frontends expecting 'token'
         "user": {
             "id": user.UserID,
             "username": user.Username,

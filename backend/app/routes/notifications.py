@@ -18,59 +18,15 @@ def safe_get_user_id():
 # -------------------------------------------------------------------
 # 1. GET ALL USER NOTIFICATIONS
 # -------------------------------------------------------------------
-@notifications_bp.get("")
+from flask_jwt_extended import jwt_required, get_jwt_identity
+
+@notifications_bp.route('/api/users/me/notifications', methods=['GET'])
 @jwt_required()
-def get_notifications():
-    """Get all notifications for the current authenticated user.
-    ---
-    tags:
-      - Notifications
-    security:
-      - BearerAuth: []
-    responses:
-      200:
-        description: List of notifications and unread count returned successfully.
-      400:
-        description: Invalid user identity.
-      401:
-        description: Unauthorized.
-    """
-    try:
-        user_id = safe_get_user_id()
-    except (ValueError, TypeError):
-        return jsonify({"error": "Invalid user identity"}), 400
-
-    notifs = (
-        Notification.query.filter_by(UserID=user_id)
-        .order_by(Notification.CreatedAt.desc())
-        .all()
-    )
-
-    unread_count = sum(1 for n in notifs if not n.IsRead)
-
-    return (
-        jsonify(
-            {
-                "unread_count": unread_count,
-                "notifications": [
-                    {
-                        "id": notification.NotificationID,
-                        "notification_id": notification.NotificationID,
-                        "message": notification.Message,
-                        "is_read": notification.IsRead,
-                        "content_id": getattr(notification, "ContentID", None),
-                        "created_at": (
-                            notification.CreatedAt.isoformat()
-                            if notification.CreatedAt
-                            else None
-                        ),
-                    }
-                    for notification in notifs
-                ],
-            }
-        ),
-        200,
-    )
+def get_user_notifications():
+    current_user_id = get_jwt_identity()  # <-- Add this line
+    notifications = Notification.query.filter_by(user_id=current_user_id).all()
+    
+    return jsonify([notification.to_dict() for notification in notifications]), 200
 
 
 # -------------------------------------------------------------------

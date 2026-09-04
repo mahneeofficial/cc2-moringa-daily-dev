@@ -74,6 +74,7 @@ def create_app(config_name=None):
     from app.routes.admin import admin_bp
     from app.routes.auth_profile import auth_profile_bp
     from app.routes.categories import categories_bp
+    from app.routes.ai_routes import ai_bp
     from app.routes.comment_reactions import comment_reactions_bp
     from app.routes.comments import comments_bp
     from app.routes.content import content_bp
@@ -83,20 +84,18 @@ def create_app(config_name=None):
     from app.routes.subscriptions import subscriptions_bp
 
     # Register Blueprints
+    # Register Blueprints
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
-    app.register_blueprint(auth_profile_bp, url_prefix="/api/auth")
+    app.register_blueprint(auth_profile_bp, url_prefix="/api")  # Changed prefix so /api/auth and /api/profiles work
+    app.register_blueprint(ai_bp, url_prefix="/api/ai")
     app.register_blueprint(categories_bp, url_prefix="/api/categories")
     app.register_blueprint(content_bp, url_prefix="/api/content")
     app.register_blueprint(comments_bp, url_prefix="/api")
     app.register_blueprint(interactions_bp, url_prefix="/api")
-    app.register_blueprint(
-        notifications_bp,
-        url_prefix="/api/users/me/notifications"
-    )
-    app.register_blueprint(subscriptions_bp, url_prefix="/api/user/me/subscriptions")
+    app.register_blueprint(notifications_bp, url_prefix="/api") # Changed prefix so /api/users/me/notifications works
+    app.register_blueprint(subscriptions_bp, url_prefix="/api/subscriptions")
     app.register_blueprint(comment_reactions_bp, url_prefix="/api")
     app.register_blueprint(reports_bp, url_prefix="/api")
-
     # Root route
     @app.get("/")
     def index():
