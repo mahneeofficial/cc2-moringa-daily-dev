@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -11,6 +12,27 @@ from app.models import Content, Profile, User
 auth_profile_bp = Blueprint("auth_profile", __name__)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
+
+# ---------------------------------------------------------------------------
+# Password-reset email cooldown (in-memory, per email address).
+# Once REAL emails are switched on, anyone can hammer /forgot-password and
+# burn the SMTP account's daily sending quota (Gmail allows ~500/day) or
+# use it to spam victims. One email per address per minute, answered with
+# the same generic message so nobody can tell it was throttled.
+# ---------------------------------------------------------------------------
+RESET_EMAIL_COOLDOWN_SECONDS = 60
+_last_reset_request = {}
+
+
+def _reset_email_on_cooldown(email):
+    now = time.time()
+    last = _last_reset_request.get(email, 0)
+    if now - last < RESET_EMAIL_COOLDOWN_SECONDS:
+        return True
+    if len(_last_reset_request) > 5000:  # keep the dict tiny forever
+        _last_reset_request.clear()
+    _last_reset_request[email] = now
+    return False
 
 
 def allowed_file(filename):
@@ -223,6 +245,16 @@ def forgot_password():
 
     user = User.query.filter_by(Email=email).first()
     if not user:
+        return (
+            jsonify({
+                "message": "If an account with that email exists, instructions have been sent."
+            }),
+            200,
+        )
+
+    if _reset_email_on_cooldown(user.Email):
+        # Throttled: answer with the exact same generic message as a normal
+        # request — no second email is actually sent.
         return (
             jsonify({
                 "message": "If an account with that email exists, instructions have been sent."

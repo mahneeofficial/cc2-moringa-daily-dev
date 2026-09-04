@@ -110,6 +110,10 @@ r = client.post("/api/auth/forgot-password", json={"email": "ann@moringa.com"})
 check("forgot-password existing email 200 (dev link when SMTP unconfigured)",
       r.status_code == 200, r.get_json())
 
+r = client.post("/api/auth/forgot-password", json={"email": "ann@moringa.com"})
+check("reset cooldown: immediate 2nd request -> generic 200, no dev link, no email sent",
+      r.status_code == 200 and not r.get_json().get("dev_reset_url"), r.get_json())
+
 r = client.post("/api/auth/logout")
 check("logout via /auth alias 200", r.status_code == 200, r.get_json())
 r = client.post("/api/auth/reset-password", json={"token": "bogus", "password": "NewPass123!"})
