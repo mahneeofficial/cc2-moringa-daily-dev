@@ -21,6 +21,20 @@ def safe_get_user_id():
 @notifications_bp.get("")
 @jwt_required()
 def get_notifications():
+    """Get all notifications for the current authenticated user.
+    ---
+    tags:
+      - Notifications
+    security:
+      - BearerAuth: []
+    responses:
+      200:
+        description: List of notifications and unread count returned successfully.
+      400:
+        description: Invalid user identity.
+      401:
+        description: Unauthorized.
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
@@ -66,6 +80,20 @@ def get_notifications():
 @notifications_bp.patch("/read-all")
 @jwt_required()
 def mark_all_as_read():
+    """Mark all notifications as read for the current user.
+    ---
+    tags:
+      - Notifications
+    security:
+      - BearerAuth: []
+    responses:
+      200:
+        description: All unread notifications updated successfully.
+      400:
+        description: Invalid user identity.
+      401:
+        description: Unauthorized.
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
@@ -95,6 +123,28 @@ def mark_all_as_read():
 @notifications_bp.patch("/<int:notification_id>/read")
 @jwt_required()
 def mark_as_read(notification_id):
+    """Mark a single notification as read.
+    ---
+    tags:
+      - Notifications
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: notification_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the notification to mark as read
+    responses:
+      200:
+        description: Notification marked as read.
+      400:
+        description: Invalid user identity.
+      403:
+        description: Forbidden (Access denied to this notification).
+      404:
+        description: Notification not found.
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
@@ -119,6 +169,28 @@ def mark_as_read(notification_id):
 @notifications_bp.delete("/<int:notification_id>")
 @jwt_required()
 def delete_notification(notification_id):
+    """Delete a single notification by ID.
+    ---
+    tags:
+      - Notifications
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: notification_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the notification to delete
+    responses:
+      200:
+        description: Notification deleted successfully.
+      400:
+        description: Invalid user identity.
+      403:
+        description: Forbidden (Access denied to this notification).
+      404:
+        description: Notification not found.
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):

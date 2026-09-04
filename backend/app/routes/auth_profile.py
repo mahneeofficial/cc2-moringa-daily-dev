@@ -5,7 +5,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.utils import secure_filename
 
 from app.email_service import send_password_reset_email
-from app.extensions import db
+from app.extensions import db,bcrypt
 from app.models import Content, Profile, User
 
 auth_profile_bp = Blueprint("auth_profile", __name__)
@@ -38,16 +38,56 @@ def verify_reset_token(token):
     except (SignatureExpired, BadSignature):
         return None
 
-
 # ==========================================
 # AUTHENTICATION ENDPOINTS
 # ==========================================
 
-
 @auth_profile_bp.post("/register")
-@auth_profile_bp.post("/auth/register")
 def register():
-    data = request.get_json(silent=True) or {}
+    """Register a new user
+    ---
+    tags:
+      - Authentication
+    consumes:
+      - application/json
+    produces:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - username
+            - email
+            - password
+          properties:
+            username:
+              type: string
+              example: johndoe
+            email:
+              type: string
+              example: johndoe@example.com
+            password:
+              type: string
+              example: yourpassword123
+            role:
+              type: string
+              example: user
+    responses:
+      201:
+        description: User registered successfully
+      400:
+        description: Missing required fields or invalid data
+      409:
+        description: Username or email already exists
+      500:
+        description: Database commit error
+    """
+    # Parse payload gracefully from JSON or Form submission
+    data = request.get_json(force=True, silent=True) or request.form.to_dict() or {}
+    
     username = data.get("username")
     email = data.get("email")
     password = data.get("password")
@@ -67,134 +107,144 @@ def register():
     if existing_user:
         return jsonify({"error": "Username or email already exists"}), 409
 
-    new_user = User(
-        Username=username,
-        Email=email,
-        Role=role,
-        IsActive=True,
-    )
-    if hasattr(new_user, "set_password"):
-        new_user.set_password(password)
-    else:
-        new_user.password_hash = password
+    try:
+        new_user = User(
+            Username=username,
+            Email=email,
+            Role=role,
+            IsActive=True,
+        )
+        if hasattr(new_user, "set_password"):
+            new_user.set_password(password)
+        else:
+            new_user.password_hash = password
 
-    db.session.add(new_user)
-    db.session.flush()
+        db.session.add(new_user)
+        db.session.flush()
 
-    new_profile = Profile(UserID=new_user.UserID)
-    db.session.add(new_profile)
-    db.session.commit()
+        new_profile = Profile(UserID=new_user.UserID)
+        db.session.add(new_profile)
+        db.session.commit()
 
-    access_token = create_access_token(identity=str(new_user.UserID))
-
-    return (
-        jsonify({
-            "message": "User created successfully.",
-            "token": access_token,
-            "access_token": access_token,
-            "user": {
-                "id": new_user.UserID,
-                "user_id": new_user.UserID,
-                "username": new_user.Username,
-                "email": new_user.Email,
-                "role": new_user.Role,
-            },
-        }),
-        201,
-    )
+        return (
+            jsonify({
+                "message": "User created successfully.",
+                "user": {
+                    "id": new_user.UserID,
+                    "user_id": new_user.UserID,
+                    "username": new_user.Username,
+                    "email": new_user.Email,
+                    "role": new_user.Role,
+                },
+            }),
+            201,
+        )
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": "Failed to create user account", "details": str(e)}), 500
 
 
 @auth_profile_bp.post("/login")
-@auth_profile_bp.post("/auth/login")
 def login():
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("email") or data.get("username")
+    """Authenticate user and return JWT token
+    ---
+    tags:
+      - Authentication
+    consumes:
+      - application/json
+    produces:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - email
+            - password
+          properties:
+            email:
+              type: string
+              example: johndoe@example.com
+            password:
+              type: string
+              example: yourpassword123
+    responses:
+      200:
+        description: Authentication successful
+      400:
+        description: Missing credentials
+      401:
+        description: Invalid credentials
+    """
+    data = request.get_json(force=True, silent=True) or request.form.to_dict() or {}
+
+    email = data.get("email")
     password = data.get("password")
 
-    if not identifier or not password:
-        return jsonify({"error": "Email/username and password are required"}), 400
-
-    user = User.query.filter(
-        (User.Email == identifier) | (User.Username == identifier)
-    ).first()
-
-    is_authenticated = False
-    if user:
-        if hasattr(user, "check_password"):
-            is_authenticated = user.check_password(password)
-        elif hasattr(user, "authenticate"):
-            is_authenticated = user.authenticate(password)
-
-    if not user or not is_authenticated:
-        return jsonify({"error": "Invalid email/username or password"}), 401
-
-    if hasattr(user, "IsActive") and not user.IsActive:
-        return jsonify({"error": "Account is inactive"}), 403
-
-    access_token = create_access_token(identity=str(user.UserID))
-    role = getattr(user, "Role", "user")
-    is_admin = getattr(user, "is_admin", False) or (role.lower() == "admin")
-
-    return (
-        jsonify({
-            "token": access_token,
-            "access_token": access_token,
-            "message": "Login successful",
-            "user": {
-                "id": user.UserID,
-                "user_id": user.UserID,
-                "username": user.Username,
-                "email": user.Email,
-                "role": role,
-                "is_admin": is_admin,
-            },
-        }),
-        200,
-    )
-
-
-@auth_profile_bp.post("/logout")
-def logout():
-    return jsonify({"message": "Logout successful."}), 200
-
-
-@auth_profile_bp.post("/forgot-password")
-def forgot_password():
-    data = request.get_json(silent=True) or {}
-    email = data.get("email")
-
-    if not email:
-        return jsonify({"error": "Email is required."}), 400
+    if not email or not password:
+        return jsonify({"error": "Email and password are required."}), 400
 
     user = User.query.filter_by(Email=email).first()
     if not user:
-        return (
-            jsonify({
-                "message": "If an account with that email exists, instructions have been sent."
-            }),
-            200,
-        )
+        return jsonify({"error": "Invalid email or password"}), 401
 
-    token = generate_reset_token(user.Email)
-    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
-    reset_url = f"{frontend_url}/reset-password?token={token}"
+      # Check password logic
+    if hasattr(user, "check_password"):
+        is_valid_password = user.check_password(password)
+    else:
+        # Use bcrypt to safely verify against the database column _Password_Hash
+        is_valid_password = bcrypt.check_password_hash(user._Password_Hash, password)
 
-    try:
-        send_password_reset_email(user.Email, reset_url)
-    except Exception:
-        current_app.logger.exception("Failed to send password reset email.")
-        return jsonify({"error": "Unable to send password reset email."}), 500
+    if not is_valid_password:
+        return jsonify({"error": "Invalid email or password"}), 401
+    # Generate JWT token
+    from flask_jwt_extended import create_access_token
+    access_token = create_access_token(identity=str(user.UserID))
 
-    return (
-        jsonify({
-            "message": "If an account with that email exists, instructions have been sent."
-        }),
-        200,
-    )
+    return jsonify({
+        "message": "Login successful",
+        "access_token": access_token,
+        "user": {
+            "id": user.UserID,
+            "username": user.Username,
+            "email": user.Email,
+            "role": user.Role
+        }
+    }), 200
 
 
 @auth_profile_bp.post("/reset-password")
 def reset_password():
+    """Reset password using reset token
+    ---
+    tags:
+      - Authentication
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - token
+            - password
+          properties:
+            token:
+              type: string
+              example: "eyJhbGciOi..."
+            password:
+              type: string
+              example: newsecurepassword123
+    responses:
+      200:
+        description: Password reset successful
+      400:
+        description: Invalid token or password format error
+      404:
+        description: User not found
+    """
     data = request.get_json(silent=True) or {}
     token = data.get("token")
     password = data.get("password")
@@ -225,6 +275,38 @@ def reset_password():
 @auth_profile_bp.put("/change-password")
 @jwt_required()
 def change_password():
+    """Change password for currently authenticated user
+    ---
+    tags:
+      - Authentication
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - old_password
+            - new_password
+          properties:
+            old_password:
+              type: string
+              example: oldpassword123
+            new_password:
+              type: string
+              example: newpassword123
+    responses:
+      200:
+        description: Password updated successfully
+      400:
+        description: Invalid request or incorrect current password
+      401:
+        description: Unauthorized / Missing token
+      404:
+        description: User not found
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
@@ -258,23 +340,29 @@ def change_password():
     db.session.commit()
     return jsonify({"message": "Password updated successfully."}), 200
 
+
 # ==========================================
 # PROFILE ENDPOINTS
 # ==========================================
 
-# 1. CORS Preflight Handler (Handles all OPTIONS requests automatically)
-@auth_profile_bp.before_request
-def handle_options():
-    if request.method == "OPTIONS":
-        return "", 200
 
-
-# 2. Get User Profile
 @auth_profile_bp.get("/me")
-@auth_profile_bp.get("/profiles/me")
-@auth_profile_bp.get("/auth/me")
 @jwt_required()
 def get_my_profile():
+    """Get current authenticated user profile
+    ---
+    tags:
+      - Profile
+    security:
+      - BearerAuth: []
+    responses:
+      200:
+        description: User profile and post summary retrieved successfully
+      401:
+        description: Unauthorized / Missing token
+      404:
+        description: User not found
+    """
     current_user_id = safe_get_user_id()
 
     user = db.session.get(User, current_user_id)
@@ -319,6 +407,7 @@ def get_my_profile():
             "profile": {
                 "profile_id": profile.ProfileID,
                 "bio": profile.Bio or "",
+                "skills": profile.Skills or "",
                 "interests": profile.Interests or "",
                 "profile_image": profile.ProfileImage or "",
                 "posts_count": len(user_posts),
@@ -328,31 +417,44 @@ def get_my_profile():
         200,
     )
 
-# app/routes/auth_profile.py
 
-@auth_profile_bp.route("/profiles/me", methods=["PUT", "POST", "PATCH", "OPTIONS"])
-@auth_profile_bp.route("/auth/me", methods=["PUT", "POST", "PATCH", "OPTIONS"])
-@auth_profile_bp.route("/me", methods=["PUT", "POST", "PATCH", "OPTIONS"])
+@auth_profile_bp.patch("/me")
+@jwt_required()
 def update_profile():
-    # 1. Instantly return 200 for CORS preflight OPTIONS requests
-    if request.method == "OPTIONS":
-        return "", 200
-
-    # 2. Check if the token was sent in the Authorization header
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        print("Backend Error: No Authorization header received.")
-        return jsonify({"error": "Missing Authorization header"}), 401
-
-    # 3. Verify the token manually
-    from flask_jwt_extended import verify_jwt_in_request
-    try:
-        verify_jwt_in_request()
-    except Exception as e:
-        print(f"Backend JWT Error: {str(e)}")
-        return jsonify({"error": f"Invalid or expired token: {str(e)}"}), 401
-
-    # 4. Perform the update if token is valid
+    """Update profile details (Bio, Interests, Skills, GitHub, Profile Image)
+    ---
+    tags:
+      - Profile
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            bio:
+              type: string
+              example: Full-stack developer passionate about open source.
+            interests:
+              type: string
+              example: Web Development, Machine Learning
+            skills:
+              type: string
+              example: Python, Flask, React, PostgreSQL
+            github_profile:
+              type: string
+              example: https://github.com/octocat
+            profile_image:
+              type: string
+              example: /static/uploads/avatars/avatar_user_1.png
+    responses:
+      200:
+        description: Profile updated successfully
+      401:
+        description: Missing or invalid Authorization header
+    """
     current_user_id = safe_get_user_id()
 
     profile = Profile.query.filter_by(UserID=current_user_id).first()
@@ -364,6 +466,15 @@ def update_profile():
 
     profile.Bio = data.get("bio", profile.Bio)
     profile.Interests = data.get("interests", profile.Interests)
+    profile.Skills = data.get("skills", profile.Skills)
+
+    if "skills" in data or "tech_stack" in data:
+        profile.Skills = data.get("skills") or data.get("tech_stack")
+
+    if "github_profile" in data or "github" in data or "githubUrl" in data:
+        profile.GithubProfile = (
+            data.get("github_profile") or data.get("github") or data.get("githubUrl")
+        )
 
     if "profile_image" in data or "profileImage" in data:
         profile.ProfileImage = data.get("profile_image") or data.get("profileImage")
@@ -377,26 +488,37 @@ def update_profile():
             "user_id": profile.UserID,
             "bio": profile.Bio or "",
             "interests": profile.Interests or "",
+            "skills": getattr(profile, "Skills", "") or "",
+            "github_profile": getattr(profile, "GithubProfile", "") or "",
             "profile_image": profile.ProfileImage or "",
         }
     }), 200
 
 
-# ==========================================
-# 1. Blueprint-Level CORS Preflight Handler
-# ==========================================
-@auth_profile_bp.before_request
-def handle_options():
-    if request.method == "OPTIONS":
-        return "", 200
-
-
-# ==========================================
-# 4. Update Profile Picture
-# ==========================================
-@auth_profile_bp.route("/avatar", methods=["PATCH", "POST"])
+@auth_profile_bp.patch("/avatar")
 @jwt_required()
 def update_profile_avatar():
+    """Upload profile picture
+    ---
+    tags:
+      - Profile
+    security:
+      - BearerAuth: []
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: profile_picture
+        in: formData
+        type: file
+        description: Profile image file (png, jpg, jpeg, webp, gif)
+    responses:
+      200:
+        description: Profile picture updated successfully
+      400:
+        description: No file provided or invalid file format
+      401:
+        description: Unauthorized
+    """
     current_user_id = safe_get_user_id()
 
     profile = Profile.query.filter_by(UserID=current_user_id).first()
@@ -434,11 +556,24 @@ def update_profile_avatar():
     return jsonify({"error": "Invalid file format."}), 400
 
 
-# ==========================================
-# 5. Public Profile View
-# ==========================================
 @auth_profile_bp.get("/users/<int:user_id>")
 def get_public_profile(user_id):
+    """Get public profile of a user by User ID
+    ---
+    tags:
+      - Profile
+    parameters:
+      - name: user_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the requested user
+    responses:
+      200:
+        description: Public profile details retrieved
+      404:
+        description: User not found
+    """
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404

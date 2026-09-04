@@ -21,6 +21,37 @@ def safe_get_user_id():
 @subscriptions_bp.post("")
 @jwt_required()
 def subscribe_to_category():
+    """Subscribe to a specific category.
+    ---
+    tags:
+      - Subscriptions
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - category_id
+          properties:
+            category_id:
+              type: integer
+              description: ID of the category to subscribe to
+              example: 1
+    responses:
+      201:
+        description: Subscribed successfully.
+      400:
+        description: Missing category_id or invalid user identity.
+      401:
+        description: Unauthorized.
+      404:
+        description: Category not found.
+      409:
+        description: Already subscribed to this category.
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
@@ -69,6 +100,20 @@ def subscribe_to_category():
 @subscriptions_bp.get("")
 @jwt_required()
 def get_my_subscriptions():
+    """Get all subscriptions for the authenticated user.
+    ---
+    tags:
+      - Subscriptions
+    security:
+      - BearerAuth: []
+    responses:
+      200:
+        description: List of active subscriptions retrieved successfully.
+      400:
+        description: Invalid user identity.
+      401:
+        description: Unauthorized.
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
@@ -100,6 +145,28 @@ def get_my_subscriptions():
 @subscriptions_bp.delete("/<int:category_id>")
 @jwt_required()
 def unsubscribe_from_category(category_id):
+    """Unsubscribe from a specific category.
+    ---
+    tags:
+      - Subscriptions
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: category_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the category to unsubscribe from
+    responses:
+      200:
+        description: Unsubscribed successfully.
+      400:
+        description: Invalid user identity.
+      401:
+        description: Unauthorized.
+      404:
+        description: Subscription not found.
+    """
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):

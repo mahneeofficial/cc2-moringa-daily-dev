@@ -28,6 +28,38 @@ def safe_get_user_id():
 @interactions_bp.patch("/posts/<int:post_id>/like")
 @jwt_required()
 def toggle_like(post_id):
+    """Toggle like or unlike on a post/content item.
+    ---
+    tags:
+      - Interactions
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: post_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the content post
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            liked:
+              type: boolean
+              default: true
+              description: Set to true to like, false to unlike
+    responses:
+      200:
+        description: Like status updated successfully.
+      400:
+        description: Invalid user identity.
+      404:
+        description: Content or User not found.
+      500:
+        description: Failed to update like status.
+    """
     content = db.session.get(Content, post_id)
     if not content:
         return jsonify({"error": "Content not found"}), 404
@@ -132,13 +164,49 @@ def toggle_like(post_id):
 @interactions_bp.post("/content/<int:content_id>/reactions")
 @jwt_required()
 def react_to_content(content_id):
+    """React to content (like or dislike).
+    ---
+    tags:
+      - Interactions
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: content_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the content item
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - reaction
+          properties:
+            reaction:
+              type: string
+              enum: [like, dislike]
+              example: like
+            type:
+              type: string
+              enum: [like, dislike]
+    responses:
+      200:
+        description: Reaction recorded successfully.
+      400:
+        description: Missing or invalid reaction type.
+      404:
+        description: Content not found.
+      500:
+        description: Failed to record reaction.
+    """
     content = db.session.get(Content, content_id)
     if not content:
         return jsonify({"error": "Content not found"}), 404
 
     data = request.get_json(silent=True)
     if not data:
-        return jsonify({"error": "No input data provided"}), 400
         return jsonify({"error": "No input data provided"}), 400
 
     reaction_type = data.get("type") or data.get("reaction")
@@ -174,13 +242,45 @@ def react_to_content(content_id):
 @interactions_bp.post("/content/<int:content_id>/share")
 @jwt_required()
 def share_content(content_id):
+    """Share content with another user.
+    ---
+    tags:
+      - Interactions
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: content_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the content item to share
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - shared_with_user_id
+          properties:
+            shared_with_user_id:
+              type: integer
+              description: ID of the user to share content with
+    responses:
+      200:
+        description: Share recorded successfully.
+      400:
+        description: Missing input data or shared_with_user_id.
+      404:
+        description: Content or Target user not found.
+      500:
+        description: Failed to record share.
+    """
     content = db.session.get(Content, content_id)
     if not content:
         return jsonify({"error": "Content not found"}), 404
 
     data = request.get_json(silent=True)
     if not data:
-        return jsonify({"error": "No input data provided."}), 400
         return jsonify({"error": "No input data provided."}), 400
 
     shared_with_user_id = data.get("shared_with_user_id")
@@ -213,6 +313,18 @@ def share_content(content_id):
 @interactions_bp.get("/users/me/wishlist")
 @jwt_required()
 def get_wishlist():
+    """Get the current authenticated user's wishlist.
+    ---
+    tags:
+      - Wishlist
+    security:
+      - BearerAuth: []
+    responses:
+      200:
+        description: List of wishlist items returned.
+      401:
+        description: Unauthorized.
+    """
     user_id = safe_get_user_id()
     items = Wishlist.query.filter_by(UserID=user_id).all()
 
@@ -224,9 +336,38 @@ def get_wishlist():
 @interactions_bp.post("/wishlist")
 @jwt_required()
 def add_to_wishlist():
+    """Add a content item to the user's wishlist.
+    ---
+    tags:
+      - Wishlist
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - content_id
+          properties:
+            content_id:
+              type: integer
+              description: ID of the content item
+    responses:
+      201:
+        description: Added to wishlist successfully.
+      400:
+        description: Missing required content_id or input data.
+      404:
+        description: Content not found.
+      409:
+        description: Content is already in the wishlist.
+      500:
+        description: Failed to add to wishlist.
+    """
     data = request.get_json(silent=True)
     if not data:
-        return jsonify({"error": "No input data provided"}), 400
         return jsonify({"error": "No input data provided"}), 400
 
     content_id = data.get("content_id")
@@ -254,9 +395,30 @@ def add_to_wishlist():
 
 
 @interactions_bp.delete("/wishlist/<int:wishlist_id>")
-@interactions_bp.delete("/wishlist/<int:wishlist_id>")
 @jwt_required()
 def remove_from_wishlist(wishlist_id):
+    """Remove an item from the user's wishlist.
+    ---
+    tags:
+      - Wishlist
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: wishlist_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the wishlist record
+    responses:
+      200:
+        description: Removed from wishlist successfully.
+      403:
+        description: Forbidden (Cannot delete another user's wishlist item).
+      404:
+        description: Wishlist item not found.
+      500:
+        description: Failed to remove from wishlist.
+    """
     wishlist = db.session.get(Wishlist, wishlist_id)
     if not wishlist:
         return jsonify({"error": "Wishlist item not found"}), 404
@@ -280,6 +442,18 @@ def remove_from_wishlist(wishlist_id):
 @interactions_bp.get("/notifications")
 @jwt_required()
 def get_notifications():
+    """Get all notifications for the current authenticated user.
+    ---
+    tags:
+      - Notifications
+    security:
+      - BearerAuth: []
+    responses:
+      200:
+        description: List of notifications returned.
+      400:
+        description: Invalid user identity.
+    """
     try:
         current_user_id = safe_get_user_id()
     except (ValueError, TypeError):

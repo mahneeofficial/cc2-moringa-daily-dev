@@ -5,6 +5,7 @@ from flask_marshmallow import Marshmallow
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import MetaData
+from flasgger import Swagger 
 
 # Explicit naming conventions prevent migration failures in Alembic
 metadata = MetaData(
@@ -23,3 +24,4 @@ migrate = Migrate()
 cors = CORS()
 bcrypt = Bcrypt()
 ma = Marshmallow()
+swagger= Swagger()

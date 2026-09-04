@@ -14,3 +14,4 @@ psycopg2-binary>=2.9.10
 itsdangerous>=2.2.0
 python-dotenv>=1.0.0
 Flask-marshmallow==1.2.1
+flasgger==0.9.7.1

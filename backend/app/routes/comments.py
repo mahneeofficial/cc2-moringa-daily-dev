@@ -67,10 +67,78 @@ def _build_comment_tree(comment):
 # -------------------------------------------------------------------
 # 1. GET COMMENTS FOR CONTENT
 # -------------------------------------------------------------------
-@comments_bp.route(
-    "/content/<int:content_id>/comments", methods=["GET"], strict_slashes=False
-)
+@comments_bp.get("/content/<int:content_id>/comments")
 def get_comments(content_id):
+    """Get nested comment tree for a specific article or content item
+    ---
+    tags:
+      - Comments
+    parameters:
+      - name: content_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the content item whose comments to retrieve
+    responses:
+      200:
+        description: List of top-level comments with recursively nested replies
+        schema:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                example: 10
+              comment_id:
+                type: integer
+                example: 10
+              content_id:
+                type: integer
+                example: 1
+              user_id:
+                type: integer
+                example: 5
+              parent_id:
+                type: integer
+                nullable: true
+                example: null
+              parent_comment_id:
+                type: integer
+                nullable: true
+                example: null
+              body:
+                type: string
+                example: Great article! Thanks for sharing.
+              text:
+                type: string
+                example: Great article! Thanks for sharing.
+              created_at:
+                type: string
+                example: "2026-03-31T14:30:00"
+              created_at_formatted:
+                type: string
+                example: "31 Mar 2026 14:30"
+              author:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 5
+                  username:
+                    type: string
+                    example: john_doe
+                  profile_image:
+                    type: string
+                    nullable: true
+                    example: /static/uploads/avatars/avatar_user_5.png
+              replies:
+                type: array
+                items:
+                  type: object
+      404:
+        description: Content not found
+    """
     content = db.session.get(Content, content_id)
     if not content:
         return jsonify({"error": "Content not found"}), 404
@@ -87,11 +155,100 @@ def get_comments(content_id):
 # -------------------------------------------------------------------
 # 2. CREATE A COMMENT OR REPLY
 # -------------------------------------------------------------------
-@comments_bp.route(
-    "/content/<int:content_id>/comments", methods=["POST"], strict_slashes=False
-)
+@comments_bp.post("/content/<int:content_id>/comments")
 @jwt_required()
 def add_comment(content_id):
+    """Add a comment or reply to content
+    ---
+    tags:
+      - Comments
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: content_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the content item to comment on
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - body
+          properties:
+            body:
+              type: string
+              example: This is a insightful perspective!
+            text:
+              type: string
+              example: This is a insightful perspective!
+            parent_id:
+              type: integer
+              description: Optional ID of the parent comment if replying to a comment
+              example: 10
+            parent_comment_id:
+              type: integer
+              description: Alternate field name for parent comment ID
+              example: 10
+    responses:
+      201:
+        description: Comment posted successfully
+        schema:
+          type: object
+          properties:
+            id:
+              type: integer
+              example: 11
+            comment_id:
+              type: integer
+              example: 11
+            content_id:
+              type: integer
+              example: 1
+            body:
+              type: string
+              example: This is a insightful perspective!
+            text:
+              type: string
+              example: This is a insightful perspective!
+            parent_id:
+              type: integer
+              nullable: true
+              example: 10
+            parent_comment_id:
+              type: integer
+              nullable: true
+              example: 10
+            created_at:
+              type: string
+              example: "31 Mar 2026 14:35"
+            author:
+              type: object
+              properties:
+                id:
+                  type: integer
+                  example: 5
+                username:
+                  type: string
+                  example: john_doe
+                profile_image:
+                  type: string
+                  nullable: true
+                  example: /static/uploads/avatars/avatar_user_5.png
+            message:
+              type: string
+              example: Comment added successfully.
+      400:
+        description: Missing body text or parent comment content mismatch
+      401:
+        description: Unauthorized / Missing JWT token
+      404:
+        description: Content or parent comment not found
+      500:
+        description: Database insertion error
+    """
     content = db.session.get(Content, content_id)
     if not content:
         return jsonify({"error": "Content not found"}), 404
@@ -157,13 +314,10 @@ def add_comment(content_id):
 
 
 # -------------------------------------------------------------------
-# 3. MODIFY A COMMENT
+# 3. MODIFY A COMMENT (PUT / PATCH)
 # -------------------------------------------------------------------
-@comments_bp.route(
-    "/comments/<int:comment_id>", methods=["PUT", "PATCH"], strict_slashes=False
-)
-@jwt_required()
-def edit_comment(comment_id):
+def _handle_edit_comment(comment_id):
+    """Core logic to edit an existing comment."""
     comment = db.session.get(Comment, comment_id)
     if not comment:
         return jsonify({"error": "Comment not found"}), 404
@@ -202,14 +356,162 @@ def edit_comment(comment_id):
         return jsonify({"error": "Failed to update comment", "details": str(e)}), 500
 
 
+@comments_bp.put("/comments/<int:comment_id>")
+@jwt_required()
+def edit_comment_put(comment_id):
+    """Update a comment owned by current user (PUT)
+    ---
+    tags:
+      - Comments
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: comment_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the comment to edit
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - body
+          properties:
+            body:
+              type: string
+              example: Updated comment text content.
+            text:
+              type: string
+              example: Updated comment text content.
+    responses:
+      200:
+        description: Comment updated successfully
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: Comment has been updated successfully
+            id:
+              type: integer
+              example: 10
+            body:
+              type: string
+              example: Updated comment text content.
+            text:
+              type: string
+              example: Updated comment text content.
+      400:
+        description: Empty text or invalid user identity
+      401:
+        description: Unauthorized / Missing JWT token
+      403:
+        description: Forbidden / Cannot edit another user's comment
+      404:
+        description: Comment not found
+      500:
+        description: Database update error
+    """
+    return _handle_edit_comment(comment_id)
+
+
+@comments_bp.patch("/comments/<int:comment_id>")
+@jwt_required()
+def edit_comment_patch(comment_id):
+    """Partially update a comment owned by current user (PATCH)
+    ---
+    tags:
+      - Comments
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: comment_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the comment to edit
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            body:
+              type: string
+              example: Updated comment text content.
+            text:
+              type: string
+              example: Updated comment text content.
+    responses:
+      200:
+        description: Comment updated successfully
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: Comment has been updated successfully
+            id:
+              type: integer
+              example: 10
+            body:
+              type: string
+              example: Updated comment text content.
+            text:
+              type: string
+              example: Updated comment text content.
+      400:
+        description: Empty text or invalid user identity
+      401:
+        description: Unauthorized / Missing JWT token
+      403:
+        description: Forbidden / Cannot edit another user's comment
+      404:
+        description: Comment not found
+      500:
+        description: Database update error
+    """
+    return _handle_edit_comment(comment_id)
+
+
 # -------------------------------------------------------------------
 # 4. DELETE A COMMENT
 # -------------------------------------------------------------------
-@comments_bp.route(
-    "/comments/<int:comment_id>", methods=["DELETE"], strict_slashes=False
-)
+@comments_bp.delete("/comments/<int:comment_id>")
 @jwt_required()
 def delete_comment(comment_id):
+    """Delete a comment owned by current user
+    ---
+    tags:
+      - Comments
+    security:
+      - BearerAuth: []
+    parameters:
+      - name: comment_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the comment to delete
+    responses:
+      200:
+        description: Comment deleted successfully
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: Comment deleted successfully
+      401:
+        description: Unauthorized / Missing JWT token
+      403:
+        description: Forbidden / Cannot delete another user's comment
+      404:
+        description: Comment not found
+      500:
+        description: Database deletion error
+    """
     comment = db.session.get(Comment, comment_id)
     if not comment:
         return jsonify({"error": "Comment not found"}), 404
