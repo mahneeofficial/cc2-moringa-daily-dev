@@ -1,0 +1,243 @@
+# Moringa School daily.dev 🚀
+
+An authentic platform designed for students to access verified information, inspiration, and advice within the tech ecosystem. The platform serves as a central hub where the Moringa School community (students, alumni, and tech staff) can consume and create content in the form of videos, podcasts/audio, and technical blog posts.
+
+---
+
+## 🛠️ Project Description & Architecture
+
+The application implements a multi-role ecosystem (**Admin**, **Tech Writer**, **Standard User**):
+
+- **Admin:** Manages user lifecycles, creates content categories, flags/removes policy-violating content, and approves public posts.
+- **Tech Writer:** Authors technical content across categories (DevOps, Fullstack, Frontend), moderates published content, and reviews user interactions.
+- **User:** Customizes personal feeds by subscribing to categories, creates posts, interacts via Reddit-style nested comment threads, leaves reviews, saves content to wishlists, and receives recommendations.
+
+---
+
+# Moringa School daily.dev 🚀
+
+An authentic platform designed for students to access verified information, inspiration, and advice within the tech ecosystem. The platform serves as a central hub where the Moringa School community (students, alumni, and tech staff) can consume and create content in the form of videos, podcasts/audio, and technical blog posts.
+
+---
+
+## 🛠️ Project Description & Architecture
+
+The application implements a multi-role ecosystem (**Admin**, **Tech Writer**, **Standard User**):
+
+- **Admin:** Manages user lifecycles, creates content categories, flags/removes policy-violating content, and approves public posts.
+- **Tech Writer:** Authors technical content across categories (DevOps, Fullstack, Frontend), moderates published content, and reviews user interactions.
+- **User:** Customizes personal feeds by subscribing to categories, creates posts, interacts via Reddit-style nested comment threads, leaves reviews, saves content to wishlists, and receives recommendations.
+
+---
+
+## 📂 Backend Directory Layout
+
+```text
+backend/
+├── app/
+│   ├── routes/               # Blueprint Controllers
+│   │   ├── __init__.py
+│   │   ├── admin.py          # Admin user management & moderation
+│   │   ├── auth_profile.py   # Auth (Register, Login) & User Profile CRUD
+│   │   ├── categories.py     # Category CRUD operations
+│   │   ├── comment_reactions.py # Reactions (Likes/Dislikes) on comments
+│   │   ├── comments.py       # Threaded comments & reviews
+│   │   ├── content.py        # Core post creation & media handling
+│   │   ├── interactions.py   # Likes, reviews & post interactions
+│   │   ├── notifications.py  # User notification dispatches
+│   │   ├── reports.py        # Content reporting & flag moderation
+│   │   └── subscriptions.py  # Category subscription management
+│   ├── static/               # Static assets & uploads
+│   ├── __init__.py           # Flask app factory setup
+│   ├── email_service.py      # SMTP Email sending service
+│   ├── extensions.py         # SQLAlchemy, JWT, Bcrypt initializations
+│   ├── models.py             # Database Models (User, Profile, Category, Post, Comment, etc.)
+│   ├── schema.py             # Marshmallow schemas for serialization
+│   ├── seed.py               # Database seeder script
+│   └── utils.py              # Helper functions & RBAC decorators
+├── migrations/               # Flask-Migrate database history
+├── venv/                     # Python Virtual Environment
+├── .env                      # Environment secrets
+├── .env.example              # Sample environment template
+├── .gitignore                # Git ignore rules
+├── config.py                 # Environment configurations (Dev, Testing, Prod)
+├── Pipfile                   # Pipenv dependency specification
+├── Pipfile.lock              # Pipenv lockfile
+├── README.md                 # Project documentation
+├── requirements.txt          # Python dependencies manifesto
+├── run.py                    # Application entry point
+└── test_routes.py            # API route integration tests
+
+## How to Run the Backend
+
+1. Clone the repository and navigate to the backend directory.
+2. Navigate to the backend directory:
+    ```bash
+    cd backend
+    ```
+3 Create a virtual environment and activate it:
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows use `venv\Scripts\activate
+    ```
+4. Install the required dependencies:
+    ```bash
+    pip install -r requirements.txt
+    If by chance that command does not work, you can try:
+    python3/ python -m pip install -r requirements.txt
+    ```
+5. Set up the environment variables in the `.env` file.
+    ```bash
+    FLASK_APP=run.py
+    FLASK_ENV=development
+    SECRET_KEY=your-super-secret-key
+    JWT_SECRET_KEY=your-jwt-secret-key
+    DATABASE_URL=postgresql://postgres:password@localhost:5432/moringa_daily_dev
+    ```
+6. Run the seeder script to populate the database with initial data:
+    ```bash
+    python3/ python seed.py
+    ```
+7. Run the database migrations:
+    ```bash
+    flask db upgrade
+    ```
+8. Start the Flask development server:
+    ```bash
+    python3/ python run.py
+    ``` 
+9. Access the API documentation at `http://localhost:5000/apidocs`.
+
+# Testing with Curl
+I tested with curl commands to ensure that the endpoints are working as expected. This is because the Swagger UI was not loading properly. Here are some example curl commands:
+    1A. Authentication(Register new user):
+    ```bash
+    curl -X POST "http://localhost:5001/api/auth/register" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "username": "Derrick Ogumba",
+       "email": "derrick.ogumba@moringaschool.com",
+       "password": "Password12345!",
+       "role": "user"
+     }'
+     ```
+
+    1B. Login and obtain JWT token:
+    ```bash
+    curl -X POST "http://localhost:5001/api/auth/login" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "email": "derrick.ogumba@moringaschool.com",
+            "password": "Password12345!"
+        }'
+    ```
+    1C. Get profile:
+    ```bash
+    curl -X GET "http://localhost:5001/api/auth/me" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+    ```
+    2A. Create Categories:
+    Create Category (Admin / Tech Writer)
+    ```bash
+    curl -X POST "http://localhost:5001/api/categories" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -d '{
+       "name": "DevOps",
+       "description": "CI/CD pipelines, Docker, Kubernetes and Cloud Engineering"
+     }'
+     ```
+     2B. Get Categories
+    ```bash
+    curl -X GET "http://localhost:5001/api/categories" \
+     -H "Accept: application/json"
+    ```
+
+    3. Subscriptions (routes/subscriptions.py):
+    3A. Subscribe to Category
+    ```bash
+        curl -X POST "http://localhost:5001/api/subscriptions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+        -d '{
+        "category_id": 1
+        }'
+    ``` 
+    3B. Unsubscribe from Category:
+    ```bash
+        curl -X DELETE "http://localhost:5001/api/subscriptions/1" \
+        -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+    ```
+    3C. Unsubscribe from Category (alternative):
+    ``` bash
+    curl -X DELETE "http://localhost:5001/api/subscriptions/1" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+    ``` 
+    4 . Create a new post (Tech Writer/user role required):
+    4A. Create a new post
+    ```bash
+       curl -X POST "http://localhost:5001/api/posts" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+     -d '{
+       "title": "Getting Started with Kubernetes",
+       "category_id": 1,
+       "type": "blog",
+       "summary": "An introduction to container orchestration for Moringa alumni.",
+       "body": "Markdown or text content here...",
+       "media_url": "[https://res.cloudinary.com/demo/video/upload/sample.mp4](https://res.cloudinary.com/demo/video/upload/sample.mp4)"
+     }' 
+    ```
+    4B. Get all posts:
+    ```bash
+    curl -X GET "http://localhost:5001/api/posts" \
+        -H "Authorization: Bearer <JWT_TOKEN>"
+    ```
+    4C. Get a specific post by ID (replace `<POST_ID>` with the actual post ID):
+    ```bash
+    curl -X GET "http://localhost:5001/api/posts/<POST_ID>" \
+        -H "Authorization: Bearer <JWT_TOKEN>"
+    ```
+
+
+    5. Get all posts:
+    ```bash
+    curl -X GET "http://localhost:5001/api/posts" \
+        -H "Authorization: Bearer <JWT_TOKEN>"
+    ```
+    6. Get a specific post by ID (replace `<POST_ID>` with the actual post ID):
+    ```bash
+    curl -X GET "http://localhost:5001/api/posts/<POST_ID>" \
+        -H "Authorization: Bearer <JWT_TOKEN>"
+    ``` 
+    7. Update a post (replace `<POST_ID>` with the actual post ID):
+    ```bash
+    curl -X PUT "http://localhost:5001/api/posts/<POST_ID>" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer <JWT_TOKEN>" \
+        -d '{   
+            "title": "Updated Post Title",
+            "content": "This is the updated content of my post."
+        }'
+    ```
+    8. Delete a post (replace `<POST_ID>` with the actual post ID):
+    ```bash
+    curl -X DELETE "http://localhost:5001/api/posts/<POST_ID>" \
+        -H "Authorization: Bearer <JWT_TOKEN>"
+    ```
+    9. Create a comment on a post (replace `<POST_ID>` with the actual post ID):
+    ```bash
+    curl -X POST "http://localhost:5001/api/comments" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer <JWT_TOKEN>"
+        -d '{
+            "post_id": <POST_ID>,
+            "content": "This is a comment on the post."
+        }'
+    ```
+    10. Get comments for a specific post (replace `<POST_ID>` with the actual post ID):
+    ```bash
+    curl -X GET "http://localhost:5001/api/comments?post_id=<POST_ID>" \
+        -H "Authorization: Bearer <JWT_TOKEN>"
+
+    
