@@ -27,7 +27,7 @@ export default function ProfileAvatarUpload({ user, onAvatarUpdated }) {
     setUploading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/profiles/avatar`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/avatar`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`

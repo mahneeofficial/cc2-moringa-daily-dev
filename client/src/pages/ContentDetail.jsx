@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { ThumbsUp, ThumbsDown, Bookmark, Share2, Flag, Video, Headphones, FileText, Check, Sparkles } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Bookmark, Share2, Flag, Video, Headphones, FileText, Check, Sparkles, Trash2 } from "lucide-react";
 import {
   getContent,
   react,
-  reactionSummary
+  reactionSummary,
+  deleteContent
 } from "../services/contentApi";
 
 import {
@@ -31,6 +32,8 @@ export default function ContentDetail() {
   const user = useSelector(selectCurrentUser);
   const [item, setItem] = useState(null);
   const [comments, setComments] = useState([]);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const navigate = useNavigate();
   const [reactionState, setReactionState] = useState({ likes: 0, dislikes: 0, userReaction: null });
   const [saved, setSaved] = useState(false);
   const [newComment, setNewComment] = useState("");
@@ -114,6 +117,17 @@ export default function ContentDetail() {
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  // Delete this post — allowed for the post's author or an admin.
+  async function handleDeletePost() {
+    try {
+      await deleteContent(id);
+      navigate("/");
+    } catch (err) {
+      alert(err.message || "Could not delete this post.");
+      setConfirmingDelete(false);
+    }
   }
 
   async function handleReport() {
@@ -290,12 +304,31 @@ export default function ContentDetail() {
           {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
           {copied ? "Link copied" : "Share"}
         </button>
-        <button
-          onClick={handleReport}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:text-red-400 ml-auto"
-        >
-          <Flag className="w-3.5 h-3.5" /> Report
-        </button>
+        <div className="flex items-center gap-2 ml-auto">
+          {(item.author_id === user?.id || item.authorId === user?.id ||
+            user?.role?.toLowerCase() === "admin") && (
+            confirmingDelete ? (
+              <span className="flex items-center gap-2 text-[11px]">
+                <span className="text-muted">Delete this post?</span>
+                <button onClick={handleDeletePost} className="text-red-400 font-medium hover:underline">Yes</button>
+                <button onClick={() => setConfirmingDelete(false)} className="text-muted hover:underline">Cancel</button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:text-red-400"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+            )
+          )}
+          <button
+            onClick={handleReport}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:text-red-400"
+          >
+            <Flag className="w-3.5 h-3.5" /> Report
+          </button>
+        </div>
       </div>
 
       <section className="space-y-5">

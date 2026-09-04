@@ -206,11 +206,13 @@ def admin_login():
     return _authenticate_and_respond(user, message="Admin login successful")
 
 
+@auth_profile_bp.post("/auth/logout")
 @auth_profile_bp.post("/logout")
 def logout():
     return jsonify({"message": "Logout successful."}), 200
 
 
+@auth_profile_bp.post("/auth/forgot-password")
 @auth_profile_bp.post("/forgot-password")
 def forgot_password():
     data = request.get_json(silent=True) or {}
@@ -229,13 +231,23 @@ def forgot_password():
         )
 
     token = generate_reset_token(user.Email)
-    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:5173")
     reset_url = f"{frontend_url}/reset-password?token={token}"
 
     try:
         send_password_reset_email(user.Email, reset_url)
     except Exception:
         current_app.logger.exception("Failed to send password reset email.")
+        if current_app.config.get("DEBUG"):
+            # Dev convenience: SMTP usually isn't configured locally, so the
+            # email can't be sent. Return the reset link directly (dev only)
+            # so the forgot -> reset flow is testable without a mail server.
+            return jsonify({
+                "message": "Email sending is not configured on this server. "
+                           "Development mode: use the link below to reset "
+                           "your password.",
+                "dev_reset_url": reset_url,
+            }), 200
         return jsonify({"error": "Unable to send password reset email."}), 500
 
     return (
@@ -246,6 +258,7 @@ def forgot_password():
     )
 
 
+@auth_profile_bp.post("/auth/reset-password")
 @auth_profile_bp.post("/reset-password")
 def reset_password():
     data = request.get_json(silent=True) or {}
@@ -275,6 +288,7 @@ def reset_password():
     return jsonify({"message": "Password reset successful."}), 200
 
 
+@auth_profile_bp.put("/auth/change-password")
 @auth_profile_bp.put("/change-password")
 @jwt_required()
 def change_password():
@@ -496,6 +510,7 @@ def handle_options():
 # ==========================================
 # 4. Update Profile Picture
 # ==========================================
+@auth_profile_bp.route("/auth/avatar", methods=["PATCH", "POST"])
 @auth_profile_bp.route("/avatar", methods=["PATCH", "POST"])
 @jwt_required()
 def update_profile_avatar():

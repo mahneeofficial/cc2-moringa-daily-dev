@@ -57,6 +57,7 @@ def _build_comment_tree(comment):
         "body": comment.Text,
         "text": comment.Text,
         "created_at": created_at_iso or created_at_fmt,
+        "createdAt": created_at_iso or created_at_fmt,
         "created_at_formatted": created_at_fmt,
         "user": author_info,
         "author": author_info,
@@ -129,6 +130,9 @@ def add_comment(content_id):
         db.session.commit()
 
         author_info = _serialize_author(new_comment.author)
+        created_at_iso = (
+            iso_utc(new_comment.CreatedAt) if new_comment.CreatedAt else None
+        )
         created_at_fmt = (
             new_comment.CreatedAt.strftime("%d %b %Y %H:%M")
             if new_comment.CreatedAt
@@ -145,7 +149,9 @@ def add_comment(content_id):
                     "text": new_comment.Text,
                     "parent_id": new_comment.ParentCommentID,
                     "parent_comment_id": new_comment.ParentCommentID,
-                    "created_at": created_at_fmt,
+                    "created_at": created_at_iso or created_at_fmt,
+                    "createdAt": created_at_iso or created_at_fmt,
+                    "created_at_formatted": created_at_fmt,
                     "user": author_info,
                     "author": author_info,
                     "message": "Comment added successfully.",
