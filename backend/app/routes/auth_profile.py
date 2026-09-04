@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -11,6 +12,27 @@ from app.models import Content, Profile, User
 auth_profile_bp = Blueprint("auth_profile", __name__)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
+
+# ---------------------------------------------------------------------------
+# Password-reset email cooldown (in-memory, per email address).
+# Once REAL emails are switched on, anyone can hammer /forgot-password and
+# burn the SMTP account's daily sending quota (Gmail allows ~500/day) or
+# use it to spam victims. One email per address per minute, answered with
+# the same generic message so nobody can tell it was throttled.
+# ---------------------------------------------------------------------------
+RESET_EMAIL_COOLDOWN_SECONDS = 60
+_last_reset_request = {}
+
+
+def _reset_email_on_cooldown(email):
+    now = time.time()
+    last = _last_reset_request.get(email, 0)
+    if now - last < RESET_EMAIL_COOLDOWN_SECONDS:
+        return True
+    if len(_last_reset_request) > 5000:  # keep the dict tiny forever
+        _last_reset_request.clear()
+    _last_reset_request[email] = now
+    return False
 
 
 def allowed_file(filename):
@@ -206,11 +228,13 @@ def admin_login():
     return _authenticate_and_respond(user, message="Admin login successful")
 
 
+@auth_profile_bp.post("/auth/logout")
 @auth_profile_bp.post("/logout")
 def logout():
     return jsonify({"message": "Logout successful."}), 200
 
 
+@auth_profile_bp.post("/auth/forgot-password")
 @auth_profile_bp.post("/forgot-password")
 def forgot_password():
     data = request.get_json(silent=True) or {}
@@ -228,14 +252,34 @@ def forgot_password():
             200,
         )
 
+    if _reset_email_on_cooldown(user.Email):
+        # Throttled: answer with the exact same generic message as a normal
+        # request — no second email is actually sent.
+        return (
+            jsonify({
+                "message": "If an account with that email exists, instructions have been sent."
+            }),
+            200,
+        )
+
     token = generate_reset_token(user.Email)
-    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:5173")
     reset_url = f"{frontend_url}/reset-password?token={token}"
 
     try:
         send_password_reset_email(user.Email, reset_url)
     except Exception:
         current_app.logger.exception("Failed to send password reset email.")
+        if current_app.config.get("DEBUG"):
+            # Dev convenience: SMTP usually isn't configured locally, so the
+            # email can't be sent. Return the reset link directly (dev only)
+            # so the forgot -> reset flow is testable without a mail server.
+            return jsonify({
+                "message": "Email sending is not configured on this server. "
+                           "Development mode: use the link below to reset "
+                           "your password.",
+                "dev_reset_url": reset_url,
+            }), 200
         return jsonify({"error": "Unable to send password reset email."}), 500
 
     return (
@@ -246,6 +290,7 @@ def forgot_password():
     )
 
 
+@auth_profile_bp.post("/auth/reset-password")
 @auth_profile_bp.post("/reset-password")
 def reset_password():
     data = request.get_json(silent=True) or {}
@@ -275,6 +320,7 @@ def reset_password():
     return jsonify({"message": "Password reset successful."}), 200
 
 
+@auth_profile_bp.put("/auth/change-password")
 @auth_profile_bp.put("/change-password")
 @jwt_required()
 def change_password():
@@ -496,6 +542,7 @@ def handle_options():
 # ==========================================
 # 4. Update Profile Picture
 # ==========================================
+@auth_profile_bp.route("/auth/avatar", methods=["PATCH", "POST"])
 @auth_profile_bp.route("/avatar", methods=["PATCH", "POST"])
 @jwt_required()
 def update_profile_avatar():

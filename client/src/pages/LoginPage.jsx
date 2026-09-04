@@ -138,13 +138,6 @@ export default function LoginPage() {
           Sign up
         </Link>
       </p>
-
-      <p className="text-[11px] text-center text-muted/70 mt-3">
-        Admin?{' '}
-        <Link to="/admin/login" className="text-navy/60 hover:text-navy font-medium underline underline-offset-2">
-          Sign in on the admin portal
-        </Link>
-      </p>
     </div>
   );
 }

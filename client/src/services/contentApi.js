@@ -146,3 +146,13 @@ export async function react(contentId, type) {
 export async function reactionSummary(contentId) {
   return apiRequest(`/api/content/${contentId}/reactions`);
 }
+
+/**
+ * Delete a post. The API allows the AUTHOR of the post or an admin —
+ * everyone else gets a 403.
+ */
+export async function deleteContent(contentId) {
+  return apiRequest(`/api/content/${contentId}`, {
+    method: "DELETE",
+  });
+}

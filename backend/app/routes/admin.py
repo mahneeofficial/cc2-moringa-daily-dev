@@ -111,7 +111,7 @@ def update_content_status(content_id):
     # categories (their feeds changed).
     if stored_status == "Published" and was_pending:
         try:
-            from app.routes.content import _notify_subscribers
+            from app.Routes.content import _notify_subscribers
             _notify_subscribers(content)
         except Exception:
             pass
