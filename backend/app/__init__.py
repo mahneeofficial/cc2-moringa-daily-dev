@@ -35,18 +35,18 @@ def create_app(config_class=None, config_name=None):
         from app import models
 
     # Import route Blueprints
-    from app.Routes.auth_profile import auth_profile_bp
-    from app.Routes.profile import profiles_bp
-    from app.Routes.categories import categories_bp
-    from app.Routes.content import content_bp
-    from app.Routes.comments import comments_bp
-    from app.Routes.interactions import interactions_bp
-    from app.Routes.notifications import notifications_bp
-    from app.Routes.reports import reports_bp
-    from app.Routes.subscriptions import subscriptions_bp
-    from app.Routes.comment_reactions import comment_reactions_bp
-    from app.Routes.admin import admin_bp
-    from app.Routes.ai_routes import ai_bp
+    from app.routes.auth_profile import auth_profile_bp
+    from app.routes.profile import profiles_bp
+    from app.routes.categories import categories_bp
+    from app.routes.content import content_bp
+    from app.routes.comments import comments_bp
+    from app.routes.interactions import interactions_bp
+    from app.routes.notifications import notifications_bp
+    from app.routes.reports import reports_bp
+    from app.routes.subscriptions import subscriptions_bp
+    from app.routes.comment_reactions import comment_reactions_bp
+    from app.routes.admin import admin_bp
+    from app.routes.ai_routes import ai_bp
 
     # Register Blueprints
     # auth_profile_bp carries /auth/register, /auth/login, /auth/logout,
