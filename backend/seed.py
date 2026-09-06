@@ -1,89 +1,150 @@
-import sys
 import json
 import random
+import sys
 import urllib.request
+from werkzeug.security import generate_password_hash
+
 from app import create_app
 from app.extensions import db
 from app.models import (
-    User, Profile, Category, Content, Comment, CommentReaction, ContentReaction,
-    Subscription, Wishlist, Share, Notification, ContentReport, content_categories
+    Bookmark,
+    Category,
+    Comment,
+    CommentReaction,
+    Content,
+    ContentReaction,
+    ContentReport,
+    Notification,
+    Profile,
+    Share,
+    Subscription,
+    User,
+    content_categories,
 )
 
+
 def fetch_external_feed():
-    """Fetch live data dynamically from public Dev.to API"""
-    url = "https://dev.to/api/articles?per_page=20"
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    """Fetch live tech articles dynamically from the public Dev.to API."""
+    url = "https://dev.to/api/articles?per_page=30"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     try:
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:
             if response.status == 200:
+                print("✅ Successfully fetched live articles from Dev.to API.")
                 return json.loads(response.read().decode())
     except Exception as e:
-        print(f"Failed to fetch live API data: {e}")
+        print(f"❌ Failed to fetch live API data: {e}")
     return []
+
 
 def seed_database():
     app = create_app()
+
     with app.app_context():
-        print("Fetching live API payload...")
+        print("🌐 Fetching live API payload from Dev.to...")
         feed_items = fetch_external_feed()
 
         if not feed_items:
-            print("No items fetched. Aborting database seed.")
+            print("❌ No live items fetched. Check internet connection and aborting seed.")
             return
 
         try:
-            print("Clearing existing database records...")
+            # 1. Clear existing database records in strict reverse dependency order
+            print("🧹 Clearing existing database records...")
             db.session.execute(content_categories.delete())
             CommentReaction.query.delete()
             ContentReaction.query.delete()
             Comment.query.delete()
+            ContentReport.query.delete()
+            Notification.query.delete()
+            Bookmark.query.delete()
+            Share.query.delete()
+            Subscription.query.delete()
             Content.query.delete()
             Category.query.delete()
             Profile.query.delete()
             User.query.delete()
+
             db.session.commit()
+            print("✅ Database cleared successfully.")
 
             users_map = {}
             categories_map = {}
             contents = []
             comments = []
+            default_password = "password12345"
 
-            # 1. Dynamically build Users and Profiles from API Authors
-            print("Seeding Users and Profiles from live author payloads...")
+            # 2. Seed Users & Profiles dynamically from Dev.to author payloads
+            print("👥 Seeding Users and Profiles from live author payloads...")
             for item in feed_items:
                 author_info = item.get("user", {})
                 username = author_info.get("username")
-                description = item.get("description")
+                description = item.get("description", "")
 
-                if not username or not description:
+                if not username:
                     continue
 
                 if username not in users_map:
+                    role = (
+                        "Admin"
+                        if len(users_map) == 0
+                        else ("tech_writer" if len(users_map) == 1 else "Member")
+                    )
+
                     user = User(
                         Username=username,
                         Email=f"{username}@dev.to",
-                        Role="Admin" if len(users_map) == 0 else "Member",
-                        IsActive=True
+                        Role=role,
+                        IsActive=True,
                     )
-                    user.password_hash = f"hash_{username}"
 
-                    profile = Profile(
-                        Bio=author_info.get("summary") or description,
-                        ProfileImage=author_info.get("profile_image_90") or "",
-                        Interests=", ".join(item.get("tag_list", []))
+                    # Set hashed password safely
+                    if hasattr(user, "set_password"):
+                        user.set_password(default_password)
+                    elif hasattr(user, "password_hash"):
+                        user.password_hash = generate_password_hash(default_password)
+
+                    bio = (
+                        author_info.get("summary")
+                        or description
+                        or "Software engineer & content creator."
                     )
+                    profile_img = (
+                        author_info.get("profile_image_90")
+                        or f"https://api.dicebear.com/7.x/avataaars/svg?seed={username}"
+                    )
+
+                    profile = Profile()
+
+                    # Set Profile fields defensively to match your model schema
+                    if hasattr(profile, "Bio"):
+                        profile.Bio = bio[:255]
+                    elif hasattr(profile, "bio"):
+                        profile.bio = bio[:255]
+
+                    if hasattr(profile, "ProfileImage"):
+                        profile.ProfileImage = profile_img
+                    elif hasattr(profile, "profile_image"):
+                        profile.profile_image = profile_img
+
                     user.profile = profile
                     db.session.add(user)
                     users_map[username] = user
 
-                # 2. Dynamically build Categories from Article Tags
+            db.session.flush()
+
+            # 3. Seed Categories dynamically from Article Tags
+            print("📂 Seeding Categories dynamically from article tags...")
+            first_user = list(users_map.values())[0]
+
+            for item in feed_items:
                 for tag in item.get("tag_list", []):
                     tag_name = tag.capitalize()
                     if tag_name not in categories_map:
                         category = Category(
                             Name=tag_name,
-                            Description=description,
-                            CreatedBy=users_map[username].UserID
+                            Description=f"Real discussions and tutorials about {tag_name}.",
+                            CreatedBy=first_user.UserID,
                         )
                         db.session.add(category)
                         categories_map[tag_name] = category
@@ -91,29 +152,39 @@ def seed_database():
             db.session.flush()
             user_list = list(users_map.values())
 
-            # 3. Dynamically build Content from API Articles
-            print("Seeding Content items directly from API articles...")
+            # 4. Seed Content directly from Dev.to Articles
+            print("📦 Seeding Content items directly from live articles...")
             for item in feed_items:
                 author_info = item.get("user", {})
                 username = author_info.get("username")
                 title = item.get("title")
                 description = item.get("description")
                 article_url = item.get("canonical_url") or item.get("url")
-                thumbnail_url = item.get("cover_image") or ""
+                
+                # Dynamic image fallback: resolves missing/null cover_image values from API
+                cover_img = (
+                    item.get("cover_image")
+                    or item.get("social_image")
+                    or f"https://picsum.photos/800/400?random={item.get('id', random.randint(1, 1000))}"
+                )
 
-                if not username or not title or not description:
+                if not username or not title or username not in users_map:
                     continue
 
                 content_item = Content(
                     UserID=users_map[username].UserID,
                     Title=title,
-                    Description=description,
+                    Description=description or title,
                     ContentType="Article",
                     ContentURL=article_url,
-                    ThumbnailURL=thumbnail_url,
                     Status="Published",
-                    IsApproved=True
+                    IsApproved=True,
                 )
+
+                if hasattr(content_item, "ThumbnailURL"):
+                    content_item.ThumbnailURL = cover_img
+                if hasattr(content_item, "ViewsCount"):
+                    content_item.ViewsCount = random.randint(50, 1200)
 
                 for tag in item.get("tag_list", []):
                     tag_name = tag.capitalize()
@@ -125,45 +196,50 @@ def seed_database():
 
             db.session.flush()
 
-            # 4. Dynamically build Comments using API Descriptions
-            print("Seeding Comments dynamically using API excerpts...")
+            # 5. Seed Comments dynamically using real excerpts
+            print("💬 Seeding Comments using live article excerpts...")
             for content in contents:
-                sample_text = content.Description
+                comment_author = random.choice(user_list)
+                comment_text = f"Great insights on this! {content.Description[:100]}"
+
                 comment = Comment(
-                    UserID=random.choice(user_list).UserID,
+                    UserID=comment_author.UserID,
                     ContentID=content.ContentID,
-                    Text=sample_text
+                    Text=comment_text,
                 )
                 db.session.add(comment)
                 comments.append(comment)
 
             db.session.flush()
 
-            # 5. Dynamically seed Reactions adhering to unique constraints
-            print("Seeding Reactions...")
+            # 6. Seed Reactions with unique user-content constraints
+            print("👍 Seeding Content Reactions...")
             unique_likes = set()
-            reaction_choices = ['Like', 'Love', 'Haha', 'Wow']
-            
-            while len(unique_likes) < min(25, len(contents) * len(user_list)):
+            reaction_choices = ["Like", "Love", "Haha", "Wow"]
+            max_rxns = min(40, len(contents) * len(user_list))
+
+            while len(unique_likes) < max_rxns:
                 u_id = random.choice(user_list).UserID
                 c_id = random.choice(contents).ContentID
-                
+
                 if (u_id, c_id) not in unique_likes:
                     unique_likes.add((u_id, c_id))
                     rxn = ContentReaction(
                         UserID=u_id,
                         ContentID=c_id,
-                        Reaction=random.choice(reaction_choices)
+                        Reaction=random.choice(reaction_choices),
                     )
                     db.session.add(rxn)
 
             db.session.commit()
-            print("Database populated using dynamic external feed.")
+            print("🎉 Database successfully populated with real external data from Dev.to!")
+            print(f"🔑 Default login password for seeded accounts: '{default_password}'")
 
         except Exception as e:
-            print(f"Error during seeding: {e}")
+            print(f"❌ Error during database seeding: {e}")
             db.session.rollback()
             sys.exit(1)
+
 
 if __name__ == "__main__":
     seed_database()

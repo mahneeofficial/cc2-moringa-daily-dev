@@ -1,62 +1,66 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { ThumbsUp, ThumbsDown, Bookmark, Share2, Flag, Video, Headphones, FileText, Check, Sparkles, Trash2 } from "lucide-react";
+import {
+  ThumbsUp,
+  ThumbsDown,
+  Bookmark,
+  Share2,
+  Flag,
+  Video,
+  Headphones,
+  FileText,
+  Check,
+  Sparkles,
+  Trash2
+} from "lucide-react";
+
 import {
   getContent,
   react,
   reactionSummary,
   deleteContent
 } from "../services/contentApi";
-
-import {
-  toggleWishlist,
-  isWishlisted
-} from "../services/wishlistApi";
-import { listComments, addComment, updateComment, deleteComment } from "../services/commentsApi";
+import { toggleWishlist, isWishlisted } from "../services/wishlistApi";
 import { reportContent } from "../services/adminApi";
 import { selectCurrentUser } from "../features/auth/authSlice";
 import { categoryColor } from "../utils/categoryColors";
 import { timeAgo } from "../utils/format";
-import Avatar from "../components/ui/Avatar";
-import RoleBadge from "../components/ui/RoleBadge";
-import CommentThread from "../components/content/CommentThread";
-import MediaPlayer from "../components/content/MediaPlayer";
-import { ContentCardSkeleton } from "../components/ui/Skeleton";
-import { API_BASE_URL } from "../services/api";
+import CommentsSection from "../components/CommentsSection";
+import ReportModal from "../components/content/ReportModal";
+import apiRequest from "../services/api";
 
 const TYPE_ICON = { video: Video, audio: Headphones, article: FileText };
 
 export default function ContentDetail() {
   const { id } = useParams();
   const user = useSelector(selectCurrentUser);
-  const [item, setItem] = useState(null);
-  const [comments, setComments] = useState([]);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const navigate = useNavigate();
+
+  const [item, setItem] = useState(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [reactionState, setReactionState] = useState({ likes: 0, dislikes: 0, userReaction: null });
   const [saved, setSaved] = useState(false);
-  const [newComment, setNewComment] = useState("");
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // AI Summary State
   const [summary, setSummary] = useState("");
   const [summarizing, setSummarizing] = useState(false);
 
+  // Moderation / Report Modal States
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportFeedback, setReportFeedback] = useState("");
+
   useEffect(() => {
     let cancelled = false;
+
     async function load() {
       setLoading(true);
       try {
-        const [contentItem, commentTree] = await Promise.all([
-          getContent(id),
-          listComments(id).catch(() => [])
-        ]);
+        const contentItem = await getContent(id);
         if (cancelled) return;
-
         setItem(contentItem);
-        setComments(commentTree || []);
 
         try {
           const summaryData = await reactionSummary(id);
@@ -88,9 +92,6 @@ export default function ContentDetail() {
 
   async function handleReact(type) {
     if (!user) return alert("Please log in to react.");
-    // FIX: this used to call react(id, user.id, type) — the extra user.id
-    // argument shifted "type" out of place and the API received the numeric
-    // user id as the reaction type, so every click failed with a 400.
     try {
       const summaryData = await react(id, type);
       if (summaryData) setReactionState(summaryData);
@@ -119,7 +120,6 @@ export default function ContentDetail() {
     setTimeout(() => setCopied(false), 2000);
   }
 
-  // Delete this post — allowed for the post's author or an admin.
   async function handleDeletePost() {
     try {
       await deleteContent(id);
@@ -130,245 +130,266 @@ export default function ContentDetail() {
     }
   }
 
-  async function handleReport() {
+  function handleOpenReportModal() {
     if (!user) return alert("Please log in to report content.");
-    const reason = window.prompt("What's wrong with this content?");
-    if (reason) {
-      await reportContent(id, user.id, reason);
-      window.alert("Thanks — this has been flagged for review.");
+    setIsReportModalOpen(true);
+  }
+
+  async function handleReportSubmit(reportData) {
+    setIsSubmittingReport(true);
+    try {
+      if (typeof reportContent === "function") {
+        await reportContent(id, user.id, reportData.full_reason);
+      } else {
+        await apiRequest(`/api/content/${id}/report`, {
+          method: "POST",
+          body: reportData
+        });
+      }
+
+      setIsReportModalOpen(false);
+      setReportFeedback("Report submitted. You will receive a notification when admins review it.");
+      setTimeout(() => setReportFeedback(""), 6000);
+    } catch (err) {
+      console.error("Report error:", err);
+      alert(err.message || "Failed to submit report. Please try again.");
+    } finally {
+      setIsSubmittingReport(false);
     }
   }
 
-  // AI Summarize handler
   async function handleSummarize() {
     if (!item) return;
     setSummarizing(true);
     const bodyText = item.description || item.body || "";
-    const prompt = `Summarize the following article into 3 concise bullet points:\n\nTitle: ${item.title}\nContent: ${bodyText}`;
+    const promptText = `Summarize the following article into 3 concise bullet points:\n\nTitle: ${item.title}\nContent: ${bodyText}`;
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/ai/generate`, {
+      const data = await apiRequest("/api/ai/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: { prompt: promptText }
       });
-      const data = await res.json();
       setSummary(data.result || "Could not generate summary.");
     } catch (err) {
       console.error("AI Summarize error:", err);
-      setSummary("Error connecting to AI service.");
+      setSummary(err.message || "Error connecting to AI service.");
     } finally {
       setSummarizing(false);
     }
   }
 
-  async function handleTopLevelComment(e) {
-    e.preventDefault();
-    if (!newComment.trim() || !user) return;
-    await addComment(id,newComment.trim());
-    setNewComment("");
-    const tree = await listComments(id);
-    setComments(tree);
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto p-4 animate-pulse space-y-4">
+        <div className="h-4 w-24 bg-slate-800 rounded"></div>
+        <div className="h-8 w-3/4 bg-slate-800 rounded"></div>
+        <div className="h-64 w-full bg-slate-800 rounded-xl"></div>
+      </div>
+    );
   }
 
-  async function handleReply(parentId, body) {
-    if (!user) return;
-    await addComment(id, body, parentId);
-    const tree = await listComments(id);
-    setComments(tree);
-  }
-
-  async function handleEditComment(commentId, newBody) {
-    await updateComment(commentId, newBody);
-    const tree = await listComments(id);
-    setComments(tree);
-  }
-
-  async function handleDeleteComment(commentId) {
-    await deleteComment(commentId);
-    const tree = await listComments(id);
-    setComments(tree);
-  }
-
-  if (loading) return <ContentCardSkeleton />;
-  if (!item) return <p className="text-muted p-4">This post couldn't be found.</p>;
+  if (!item) return <p className="text-slate-400 p-4">This post couldn't be found.</p>;
 
   const categoryName = item.categories?.[0]?.name || item.category?.name || "General";
-  const colors = categoryColor(categoryName);
-  const TypeIcon = TYPE_ICON[item.type] || FileText;
+  const colors = typeof categoryColor === "function" ? categoryColor(categoryName) : { text: "text-emerald-400" };
+  const contentType = (item.type || item.contentType || "article").toLowerCase();
+  const TypeIcon = TYPE_ICON[contentType] || FileText;
   const bodyText = item.description || item.body || "";
-  const mediaUrl = item.url || item.mediaUrl;
+  const mediaUrl = item.url || item.mediaUrl || item.content_url;
   const createdAt = item.created_at || item.createdAt;
-  const authorName = item.author?.username || `User #${item.author_id || item.authorId || ""}`;
+
+  const authorId = item.UserID || item.user_id || item.author_id || item.authorId;
+  const authorName = item.author?.username || item.user?.username || `User #${authorId || ""}`;
+  const authorRole = item.author?.role || item.user?.role;
+  const isOwnerOrAdmin = user && (user.id === authorId || user.role?.toLowerCase() === "admin");
 
   return (
-    <article className="space-y-8">
+    <article className="space-y-8 max-w-4xl mx-auto p-4 text-slate-100">
       <div>
-        <Link to="/" className="text-xs text-muted hover:text-navy">← Back to feed</Link>
+        <Link to="/" className="text-xs text-slate-400 hover:text-white transition">
+          ← Back to feed
+        </Link>
+
+        {reportFeedback && (
+          <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{reportFeedback}</span>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mt-4 mb-2">
-          <span className={`text-[11px] font-mono uppercase tracking-wide ${colors.text}`}>{categoryName}</span>
-          <span className="text-navy/70">·</span>
-          <TypeIcon className="w-3.5 h-3.5 text-muted" />
-          <span className="text-[11px] text-muted capitalize">{item.type}</span>
+          <span className={`text-[11px] font-mono uppercase tracking-wide ${colors?.text || "text-emerald-400"}`}>
+            {categoryName}
+          </span>
+          <span className="text-slate-600">·</span>
+          <TypeIcon className="w-3.5 h-3.5 text-slate-400" />
+          <span className="text-[11px] text-slate-400 capitalize">{contentType}</span>
         </div>
 
-        <h1 className="text-3xl font-display font-bold text-navy leading-tight">{item.title}</h1>
+        <h1 className="text-3xl font-bold text-slate-100 leading-tight">
+          {item.title}
+        </h1>
 
         <div className="flex items-center justify-between gap-2 mt-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Avatar username={authorName} role={item.author?.role} />
+          {/* Author Profile Link */}
+          <Link
+            to={authorId ? `/profile/${authorId}` : "#"}
+            className="flex items-center gap-3 group transition hover:opacity-90"
+          >
+            <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-xs border border-emerald-500/30 group-hover:border-emerald-400 transition">
+              {authorName.charAt(0).toUpperCase()}
+            </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-navy">{authorName}</span>
-                <RoleBadge role={item.author?.role} />
+                <span className="text-sm font-medium text-slate-200 group-hover:text-emerald-400 group-hover:underline transition">
+                  {authorName}
+                </span>
+                {authorRole && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 capitalize">
+                    {authorRole}
+                  </span>
+                )}
               </div>
-              <span className="text-[11px] text-muted font-mono">{timeAgo(createdAt)}</span>
+              <span className="text-[11px] text-slate-500 font-mono">{timeAgo(createdAt)}</span>
             </div>
-          </div>
+          </Link>
 
-          {/* AI Summarize Action Button */}
           <button
             onClick={handleSummarize}
             disabled={summarizing}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-500/10 border border-brand-500/30 text-brand-600 rounded-lg text-xs font-semibold hover:bg-brand-500/20 transition disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-lg text-xs font-semibold hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 text-brand-500" />
+            <Sparkles className="w-3.5 h-3.5" />
             {summarizing ? "Summarizing..." : "Summarize with AI"}
           </button>
         </div>
       </div>
 
-      {/* AI Key Takeaways Summary Box */}
       {summary && (
-        <div className="p-4 bg-brand-500/5 border-l-4 border-brand-500 rounded-r-xl space-y-1">
-          <p className="text-xs font-bold uppercase tracking-wider text-brand-600 flex items-center gap-1">
+        <div className="p-4 bg-emerald-500/10 border-l-4 border-emerald-500 rounded-r-xl space-y-1">
+          <p className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1">
             <Sparkles className="w-3.5 h-3.5" /> AI Key Takeaways
           </p>
-          <div className="text-xs text-navy/80 leading-relaxed whitespace-pre-wrap">{summary}</div>
+          <div className="text-xs text-slate-200 leading-relaxed whitespace-pre-wrap">
+            {summary}
+          </div>
         </div>
       )}
 
-      {/* Media: video/audio get the player; any other post with a media
-          URL (image posts, articles with a cover file) renders the image.
-          `url` is now ABSOLUTE from the API, so this works across origins. */}
-      {(item.type === "video" || item.type === "audio") && mediaUrl && (
-        <MediaPlayer type={item.type} url={mediaUrl} />
+      {contentType === "video" && mediaUrl && (
+        <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-800">
+          <video src={mediaUrl} controls className="w-full h-full object-contain" />
+        </div>
       )}
-      {item.type !== "video" && item.type !== "audio" && mediaUrl && (
+
+      {contentType === "audio" && mediaUrl && (
+        <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+          <audio src={mediaUrl} controls className="w-full" />
+        </div>
+      )}
+
+      {contentType !== "video" && contentType !== "audio" && mediaUrl && (
         <img
           src={mediaUrl}
           alt={item.title || "Post media"}
-          className="w-full max-h-[540px] object-cover rounded-xl border border-line bg-slate-50"
-          onError={(e) => { e.currentTarget.style.display = "none"; }}
+          className="w-full max-h-[540px] object-cover rounded-xl border border-slate-800 bg-slate-900"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
         />
       )}
 
-      <div className="prose-content text-navy/70 leading-relaxed whitespace-pre-line text-[15px]">
+      <div className="text-slate-300 leading-relaxed whitespace-pre-line text-[15px]">
         {bodyText}
       </div>
 
-      <div className="flex items-center gap-2 py-4 border-y border-line">
+      <div className="flex items-center gap-2 py-4 border-y border-slate-800">
         <button
           onClick={() => handleReact("like")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
             reactionState.userReaction === "like"
-              ? "bg-brand-500/10 border-brand-500/40 text-brand-600"
-              : "border-line text-muted hover:border-navy/30"
+              ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
+              : "border-slate-800 text-slate-400 hover:border-slate-600"
           }`}
         >
           <ThumbsUp className="w-3.5 h-3.5" /> {reactionState.likes || 0}
         </button>
+
         <button
           onClick={() => handleReact("dislike")}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
             reactionState.userReaction === "dislike"
               ? "bg-red-500/10 border-red-500/40 text-red-400"
-              : "border-line text-muted hover:border-navy/30"
+              : "border-slate-800 text-slate-400 hover:border-slate-600"
           }`}
         >
           <ThumbsDown className="w-3.5 h-3.5" /> {reactionState.dislikes || 0}
         </button>
+
         <button
           onClick={handleWishlist}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition ${
-            saved ? "bg-brand-500/10 border-brand-500/40 text-brand-600" : "border-line text-muted hover:border-navy/30"
+            saved
+              ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
+              : "border-slate-800 text-slate-400 hover:border-slate-600"
           }`}
         >
           <Bookmark className="w-3.5 h-3.5" /> {saved ? "Saved" : "Save"}
         </button>
+
         <button
           onClick={handleShare}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-line text-muted hover:border-navy/30 transition"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-800 text-slate-400 hover:border-slate-600 transition"
         >
           {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
           {copied ? "Link copied" : "Share"}
         </button>
+
         <div className="flex items-center gap-2 ml-auto">
-          {(item.author_id === user?.id || item.authorId === user?.id ||
-            user?.role?.toLowerCase() === "admin") && (
+          {isOwnerOrAdmin && (
             confirmingDelete ? (
               <span className="flex items-center gap-2 text-[11px]">
-                <span className="text-muted">Delete this post?</span>
-                <button onClick={handleDeletePost} className="text-red-400 font-medium hover:underline">Yes</button>
-                <button onClick={() => setConfirmingDelete(false)} className="text-muted hover:underline">Cancel</button>
+                <span className="text-slate-400">Delete this post?</span>
+                <button
+                  onClick={handleDeletePost}
+                  className="text-red-500 font-medium hover:underline"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setConfirmingDelete(false)}
+                  className="text-slate-400 hover:underline"
+                >
+                  Cancel
+                </button>
               </span>
             ) : (
               <button
                 onClick={() => setConfirmingDelete(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:text-red-400"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-red-500 transition"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Delete
               </button>
             )
           )}
+
           <button
-            onClick={handleReport}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted hover:text-red-400"
+            onClick={handleOpenReportModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-red-500 transition"
           >
             <Flag className="w-3.5 h-3.5" /> Report
           </button>
         </div>
       </div>
 
-      <section className="space-y-5">
-        <h2 className="text-sm font-semibold text-navy/70">
-          Discussion <span className="text-muted font-mono">({comments.length})</span>
-        </h2>
+      <CommentsSection contentId={id} />
 
-        {user ? (
-          <form onSubmit={handleTopLevelComment} className="flex gap-2">
-            <Avatar username={user?.username} role={user?.role} size="sm" />
-            <input
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Add to the discussion…"
-              className="flex-1 px-3.5 py-2 rounded-lg bg-surface border border-line text-sm text-navy placeholder:text-navy/40 focus:outline-none focus:border-brand-500"
-            />
-            <button type="submit" className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg">
-              Post
-            </button>
-          </form>
-        ) : (
-          <p className="text-xs text-muted">Log in to leave a comment.</p>
-        )}
-
-        <div className="space-y-5">
-          {comments.length === 0 ? (
-            <p className="text-sm text-muted">No comments yet — start the discussion.</p>
-          ) : (
-            comments.map((comment) => (
-              <CommentThread
-                key={comment.id}
-                comment={comment}
-                onReply={handleReply}
-                onEdit={handleEditComment}
-                onDelete={handleDeleteComment}
-              />
-            ))
-          )}
-        </div>
-      </section>
+      <ReportModal 
+        isOpen={isReportModalOpen} 
+        onClose={() => setIsReportModalOpen(false)} 
+        onSubmit={handleReportSubmit} 
+        isSubmitting={isSubmittingReport} 
+      />
     </article>
   );
 }

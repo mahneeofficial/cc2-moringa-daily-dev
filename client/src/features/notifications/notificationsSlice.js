@@ -3,12 +3,14 @@ import {
   listNotifications,
   markRead,
   markAllRead,
+  deleteNotificationApi,
+  clearAllNotificationsApi,
 } from "../../services/notificationsApi";
 
 export const fetchNotifications = createAsyncThunk(
   "notifications/fetchAll",
-  async () => {
-    return await listNotifications();
+  async (userId) => {
+    return await listNotifications(userId);
   }
 );
 
@@ -22,8 +24,24 @@ export const markNotificationRead = createAsyncThunk(
 
 export const markAllNotificationsRead = createAsyncThunk(
   "notifications/markAllRead",
-  async () => {
-    await markAllRead();
+  async (userId) => {
+    await markAllRead(userId);
+  }
+);
+
+export const deleteNotification = createAsyncThunk(
+  "notifications/deleteOne",
+  async (id) => {
+    await deleteNotificationApi(id);
+    return id;
+  }
+);
+
+export const clearAllNotifications = createAsyncThunk(
+  "notifications/clearAll",
+  async (userId) => {
+    await clearAllNotificationsApi(userId);
+    return userId;
   }
 );
 
@@ -32,7 +50,8 @@ const notificationsSlice = createSlice({
 
   initialState: {
     items: [],
-    status: "idle",
+    status: "idle", // 'idle' | 'loading' | 'succeeded' | 'failed'
+    error: null,
   },
 
   reducers: {},
@@ -41,36 +60,53 @@ const notificationsSlice = createSlice({
     builder
       .addCase(fetchNotifications.pending, (state) => {
         state.status = "loading";
+        state.error = null;
       })
 
       .addCase(fetchNotifications.fulfilled, (state, action) => {
         state.status = "succeeded";
-        state.items = action.payload;
+        state.items = action.payload || [];
       })
 
-      .addCase(fetchNotifications.rejected, (state) => {
+      .addCase(fetchNotifications.rejected, (state, action) => {
         state.status = "failed";
+        state.error = action.error.message || "Failed to fetch notifications";
       })
 
       .addCase(markNotificationRead.fulfilled, (state, action) => {
         const notification = state.items.find(
-          (n) => n.id === action.payload
+          (n) => String(n.id) === String(action.payload)
         );
 
         if (notification) {
           notification.isRead = true;
+          notification.is_read = true;
         }
       })
 
       .addCase(markAllNotificationsRead.fulfilled, (state) => {
         state.items.forEach((notification) => {
           notification.isRead = true;
+          notification.is_read = true;
         });
+      })
+
+      .addCase(deleteNotification.fulfilled, (state, action) => {
+        state.items = state.items.filter(
+          (n) => String(n.id) !== String(action.payload)
+        );
+      })
+
+      .addCase(clearAllNotifications.fulfilled, (state) => {
+        state.items = [];
       });
   },
 });
 
 export default notificationsSlice.reducer;
 
+// Selectors
+export const selectAllNotifications = (state) => state.notifications.items;
+export const selectNotificationsStatus = (state) => state.notifications.status;
 export const selectUnreadCount = (state) =>
-  state.notifications.items.filter((n) => !n.isRead).length;
+  state.notifications.items.filter((n) => !n.isRead && !n.is_read).length;

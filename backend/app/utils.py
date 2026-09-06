@@ -6,39 +6,50 @@ from app.extensions import db
 from app.models import User
 
 
-def iso_utc(dt):
-    """ISO-8601 string that JavaScript's Date parses as UTC.
+def safe_get_user_id():
+    """Extract integer user ID safely from JWT identity dict or scalar."""
+    identity = get_jwt_identity()
+    if not identity:
+        return None
+    if isinstance(identity, dict):
+        return int(
+            identity.get("id")
+            or identity.get("user_id")
+            or identity.get("UserID")
+        )
+    return int(identity)
 
-    SQLite returns naive datetimes (stored as UTC). Without the 'Z' suffix,
-    `new Date("2026-09-04T01:00:00")` is parsed as LOCAL time — in Nairobi
-    (UTC+3) every brand-new post displayed as "3h ago". Appending 'Z' fixes
-    relative-time rendering everywhere.
+
+def iso_utc(dt):
+    """ISO-8601 string that JavaScript's Date parses cleanly as UTC.
+
+    Converts naive datetimes or tz-aware (+00:00) datetimes into
+    a uniform 'YYYY-MM-DDTHH:MM:SSZ' string format.
     """
     if not dt:
         return None
-    if getattr(dt, "tzinfo", None) is not None:
-        return dt.isoformat()
-    return dt.isoformat() + "Z"
+    iso_str = dt.isoformat()
+    if iso_str.endswith("+00:00"):
+        return iso_str[:-6] + "Z"
+    if not iso_str.endswith("Z") and getattr(dt, "tzinfo", None) is None:
+        return iso_str + "Z"
+    return iso_str
 
 
 def role_required(*allowed_roles):
-    """Restrict an endpoint (already behind @jwt_required()) to certain roles.
+    """Restrict an endpoint (behind @jwt_required()) to specific user roles.
 
-    The JWT identity only stores the user id, so the role is looked up in the
-    database. Matching is case-insensitive ("Admin" == "admin").
+    Role comparisons are case-insensitive ("Admin" == "admin").
     """
     allowed = {str(r).lower() for r in allowed_roles}
 
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            identity = get_jwt_identity()
-
             try:
-                if isinstance(identity, dict):
-                    user_id = int(identity.get("id"))
-                else:
-                    user_id = int(identity)
+                user_id = safe_get_user_id()
+                if not user_id:
+                    return jsonify({"error": "Invalid or missing identity"}), 401
             except (TypeError, ValueError):
                 return jsonify({"error": "Invalid or missing identity"}), 401
 

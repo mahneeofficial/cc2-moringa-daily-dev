@@ -1,5 +1,19 @@
 import apiRequest from "./api";
 
+function getAuthHeaders() {
+  const token =
+    localStorage.getItem("token") ||
+    localStorage.getItem("access_token") ||
+    localStorage.getItem("jwt") ||
+    localStorage.getItem("accessToken");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function formatContentType(type) {
+  if (!type) return "Article";
+  return type.charAt(0).toUpperCase() + type.slice(1).toLowerCase();
+}
+
 export async function listContent({
   categoryId,
   search,
@@ -8,34 +22,24 @@ export async function listContent({
 } = {}) {
   const params = new URLSearchParams();
 
-  if (categoryId) {
-    params.set("category_id", categoryId);
-  }
-
-  if (search) {
-    params.set("search", search);
-  }
-
-  if (status) {
-    params.set("status", status);
-  }
-
-  if (includeAll) {
-    params.set("status", "all");
-  }
+  if (categoryId) params.set("category_id", categoryId);
+  if (search) params.set("search", search);
+  if (status) params.set("status", status);
+  if (includeAll) params.set("status", "all");
 
   const query = params.toString();
+  const data = await apiRequest(`/api/content${query ? `?${query}` : ""}`, {
+    headers: { ...getAuthHeaders() },
+  });
 
-  const data = await apiRequest(`/api/content${query ? `?${query}` : ""}`);
-
-  // The endpoint returns { items, pagination } — normalise to a plain array
-  // so callers can always treat it like a list.
   if (Array.isArray(data)) return data;
   return data?.items ?? [];
 }
 
 export async function getContent(id) {
-  return apiRequest(`/api/content/${id}`);
+  return apiRequest(`/api/content/${id}`, {
+    headers: { ...getAuthHeaders() },
+  });
 }
 
 export async function createContent({
@@ -48,24 +52,28 @@ export async function createContent({
   categoryId,
   authorId,
 }) {
-  const token = localStorage.getItem("token");
-
   const parsedCategoryId = categoryId ? parseInt(categoryId, 10) : null;
   const parsedAuthorId = authorId ? parseInt(authorId, 10) : null;
+  const contentBody = body || description || "";
+  const contentUrl = mediaUrl || url || "";
+  const contentType = formatContentType(type);
 
   const payload = {
-    title: title,
-    description: body || description || "",
-    content_type: type || "article",
-    type: type || "article",
-    content_url: mediaUrl || url || "",
-    mediaUrl: mediaUrl || url || "",
+    title,
+    description: contentBody,
+    body: contentBody,
+    content_type: contentType,
+    contentType,
+    content_url: contentUrl,
+    mediaUrl: contentUrl,
     category_id: parsedCategoryId,
+    categoryId: parsedCategoryId,
     author_id: parsedAuthorId,
-    // Schema field compatibility fallbacks
+    authorId: parsedAuthorId,
     Title: title,
-    Description: body || description || "",
-    Type: type || "article",
+    Description: contentBody,
+    ContentType: contentType,
+    ContentURL: contentUrl,
     CategoryID: parsedCategoryId,
     AuthorID: parsedAuthorId,
   };
@@ -74,47 +82,56 @@ export async function createContent({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...getAuthHeaders(),
     },
     body: JSON.stringify(payload),
   });
 }
 
-/**
- * Instagram-style post creation: multipart upload with media file,
- * thumbnail and caption. `file` is a File/Blob from a file input.
- */
 export async function createPost({
   title,
   description,
-  type = "Image",
+  type = "Article",
   categoryId,
   file = null,
-  thumbnail = null,
-  summary = "",
-  duration = "",
 }) {
+  const contentType = formatContentType(type);
   const formData = new FormData();
+
   formData.append("title", title);
+  formData.append("Title", title);
   formData.append("description", description || "");
-  formData.append("content_type", type);
-  if (categoryId) formData.append("category_id", categoryId);
-  if (summary) formData.append("summary", summary);
-  if (duration) formData.append("duration", duration);
-  if (file) formData.append("media_file", file);
-  if (thumbnail) formData.append("thumbnail", thumbnail);
+  formData.append("body", description || "");
+  formData.append("Description", description || "");
+  formData.append("content_type", contentType);
+  formData.append("contentType", contentType);
+  formData.append("ContentType", contentType);
+
+  if (categoryId) {
+    formData.append("category_id", categoryId);
+    formData.append("categoryId", categoryId);
+    formData.append("CategoryID", categoryId);
+  }
+
+  if (file) {
+    formData.append("file", file);
+    formData.append("media_file", file);
+  }
 
   return apiRequest("/api/content", {
     method: "POST",
+    headers: { ...getAuthHeaders() },
     body: formData,
   });
 }
 
-// Admin approve goes through the admin status endpoint — there is no
-// /api/content/<id>/approve route on the backend.
 export async function approveContent(id) {
   return apiRequest(`/api/admin/content/${id}/status`, {
     method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify({ status: "Published" }),
   });
 }
@@ -122,6 +139,10 @@ export async function approveContent(id) {
 export async function rejectContent(id, reason = "") {
   return apiRequest(`/api/admin/content/${id}/status`, {
     method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
     body: JSON.stringify({ status: "Rejected", reason }),
   });
 }
@@ -129,30 +150,35 @@ export async function rejectContent(id, reason = "") {
 export async function flagContent(id) {
   return apiRequest(`/api/content/${id}/flag`, {
     method: "PATCH",
+    headers: { ...getAuthHeaders() },
   });
 }
 
-/**
- * React ("like" | "dislike") to a content item. Returns the new summary:
- * { likes, dislikes, userReaction }.
- */
 export async function react(contentId, type) {
   return apiRequest(`/api/content/${contentId}/reactions`, {
     method: "POST",
-    body: JSON.stringify({ type }),
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify({
+      type,
+      reaction: type,
+      reaction_type: type,
+      Reaction: type,
+    }),
   });
 }
 
 export async function reactionSummary(contentId) {
-  return apiRequest(`/api/content/${contentId}/reactions`);
+  return apiRequest(`/api/content/${contentId}/reactions`, {
+    headers: { ...getAuthHeaders() },
+  });
 }
 
-/**
- * Delete a post. The API allows the AUTHOR of the post or an admin —
- * everyone else gets a 403.
- */
 export async function deleteContent(contentId) {
   return apiRequest(`/api/content/${contentId}`, {
     method: "DELETE",
+    headers: { ...getAuthHeaders() },
   });
 }

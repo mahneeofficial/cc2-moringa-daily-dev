@@ -1,11 +1,19 @@
 import apiRequest from "./api";
 
-export async function getProfile() {
+/**
+ * Fetch a profile.
+ * If userId is provided, fetches the public profile for that user (/api/profiles/:userId).
+ * If no userId is provided, fetches the logged-in user's profile (/api/profiles/me).
+ */
+export async function getProfile(userId) {
+  if (userId) {
+    return apiRequest(`/api/profiles/${userId}`);
+  }
   return apiRequest("/api/profiles/me");
 }
 
-export async function fetchProfile() {
-  return getProfile();
+export async function fetchProfile(userId) {
+  return getProfile(userId);
 }
 
 export async function updateProfile({
@@ -26,4 +34,3 @@ export async function updateProfile({
     }),
   });
 }
-

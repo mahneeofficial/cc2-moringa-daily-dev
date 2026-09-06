@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Share2, Flag, ThumbsUp, ThumbsDown, Bookmark, Play, Volume2, MessageSquare } from 'lucide-react';
+import apiRequest from '../services/api';
 
 export default function PostDetail() {
   const { id } = useParams();
@@ -11,13 +12,8 @@ export default function PostDetail() {
   const [error, setError] = useState('');
   const [commentText, setCommentText] = useState('');
 
-  // Fixed endpoint from /api/content/ to /api/posts/ to match backend routes
   useEffect(() => {
-    fetch(`http://localhost:5001/api/posts/${id}`)
-      .then((res) => {
-        if (!res.ok) throw new Error('Content not found');
-        return res.json();
-      })
+    apiRequest(`/api/posts/${id}`)
       .then((data) => {
         setPost(data);
         setLoading(false);
@@ -29,28 +25,24 @@ export default function PostDetail() {
       });
   }, [id]);
 
-  const handleCommentSubmit = (e) => {
+  const handleCommentSubmit = async (e) => {
     e.preventDefault();
     if (!commentText.trim()) return;
     
-    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-    fetch(`http://localhost:5001/api/posts/${id}/comments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      },
-      body: JSON.stringify({ body: commentText })
-    })
-    .then(res => res.json())
-    .then(newComment => {
-      setPost(prev => ({
+    try {
+      const newComment = await apiRequest(`/api/posts/${id}/comments`, {
+        method: 'POST',
+        body: { body: commentText }
+      });
+
+      setPost((prev) => ({
         ...prev,
-        comments: [newComment, ...(prev.comments || [])]
+        comments: [newComment, ...(prev?.comments || [])]
       }));
       setCommentText('');
-    })
-    .catch(err => console.error('Error posting comment:', err));
+    } catch (err) {
+      console.error('Error posting comment:', err);
+    }
   };
 
   if (loading) {
@@ -85,7 +77,7 @@ export default function PostDetail() {
           <span>Back to feed</span>
         </button>
 
-        {/* Thumbnail / Media Header Preview - Only displays if media/thumbnail exists */}
+        {/* Thumbnail / Media Header Preview */}
         {(post.thumbnail_url || post.thumbnail || post.content_url) && (
           <div className="relative rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 aspect-video max-h-[400px] w-full flex items-center justify-center">
             <img 

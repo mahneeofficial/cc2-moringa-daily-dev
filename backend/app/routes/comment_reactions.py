@@ -13,7 +13,11 @@ def safe_get_user_id():
     if not identity:
         return None
     if isinstance(identity, dict):
-        return int(identity.get("id"))
+        return int(
+            identity.get("id")
+            or identity.get("user_id")
+            or identity.get("UserID")
+        )
     return int(identity)
 
 
@@ -54,12 +58,17 @@ def get_comment_reactions(comment_id):
     except (ValueError, TypeError):
         pass
 
-    return jsonify({
-        "comment_id": comment_id,
-        "likes_count": counts["likes"],
-        "dislikes_count": counts["dislikes"],
-        "user_reaction": user_reaction,
-    }), 200
+    return (
+        jsonify(
+            {
+                "comment_id": comment_id,
+                "likes_count": counts["likes"],
+                "dislikes_count": counts["dislikes"],
+                "user_reaction": user_reaction,
+            }
+        ),
+        200,
+    )
 
 
 # -------------------------------------------------------------------
@@ -80,10 +89,15 @@ def react_to_comment(comment_id):
         return jsonify({"error": "Invalid user identity"}), 400
 
     data = request.get_json(silent=True) or request.form.to_dict() or {}
-    reaction_type = data.get("type") or data.get("reaction") or data.get("reaction_type")
+    reaction_type = (
+        data.get("type") or data.get("reaction") or data.get("reaction_type")
+    )
 
     if reaction_type not in ("like", "dislike"):
-        return jsonify({"error": "Reaction type must be 'like' or 'dislike'."}), 400
+        return (
+            jsonify({"error": "Reaction type must be 'like' or 'dislike'."}),
+            400,
+        )
 
     try:
         existing = CommentReaction.query.filter_by(
@@ -96,12 +110,17 @@ def react_to_comment(comment_id):
                 db.session.delete(existing)
                 db.session.commit()
                 counts = _get_reaction_counts(comment_id)
-                return jsonify({
-                    "message": "Reaction removed",
-                    "user_reaction": None,
-                    "likes_count": counts["likes"],
-                    "dislikes_count": counts["dislikes"],
-                }), 200
+                return (
+                    jsonify(
+                        {
+                            "message": "Reaction removed",
+                            "user_reaction": None,
+                            "likes_count": counts["likes"],
+                            "dislikes_count": counts["dislikes"],
+                        }
+                    ),
+                    200,
+                )
 
             existing.Reaction = reaction_type
         else:
@@ -113,16 +132,24 @@ def react_to_comment(comment_id):
         db.session.commit()
         counts = _get_reaction_counts(comment_id)
 
-        return jsonify({
-            "message": "Comment reaction recorded",
-            "user_reaction": reaction_type,
-            "likes_count": counts["likes"],
-            "dislikes_count": counts["dislikes"],
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "Comment reaction recorded",
+                    "user_reaction": reaction_type,
+                    "likes_count": counts["likes"],
+                    "dislikes_count": counts["dislikes"],
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Failed to record reaction", "details": str(e)}), 500
+        return (
+            jsonify({"error": "Failed to record reaction", "details": str(e)}),
+            500,
+        )
 
 
 # -------------------------------------------------------------------
@@ -154,13 +181,21 @@ def remove_comment_reaction(comment_id):
         db.session.commit()
         counts = _get_reaction_counts(comment_id)
 
-        return jsonify({
-            "message": "Comment reaction removed",
-            "user_reaction": None,
-            "likes_count": counts["likes"],
-            "dislikes_count": counts["dislikes"],
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "Comment reaction removed",
+                    "user_reaction": None,
+                    "likes_count": counts["likes"],
+                    "dislikes_count": counts["dislikes"],
+                }
+            ),
+            200,
+        )
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Failed to remove reaction", "details": str(e)}), 500
+        return (
+            jsonify({"error": "Failed to remove reaction", "details": str(e)}),
+            500,
+        )

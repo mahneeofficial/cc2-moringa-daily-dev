@@ -27,9 +27,6 @@ import { hydrateFromStorage } from './features/auth/authSlice';
 export default function App() {
   const dispatch = useDispatch();
 
-  // On every app load, check localStorage for a real logged-in user (once
-  // the backend sets one) and load it into Redux, so the rest of the app
-  // reacts to auth state instead of each page reading localStorage itself.
   useEffect(() => {
     dispatch(hydrateFromStorage());
   }, [dispatch]);
@@ -45,26 +42,24 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
-        {/* Dedicated admin sign-in — public route, intentionally separate
-            from the public login form (admins are rejected there). */}
         <Route path="/admin/login" element={<AdminLoginPage />} />
 
-        {/* Everything below requires a valid login token */}
+        {/* Protected routes */}
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
             <Route path="/" element={<Home />} />
             <Route path="/content/:id" element={<ContentDetail />} />
-            {/* Instagram-style quick composer */}
             <Route path="/create" element={<CreatePost />} />
-            {/* Long-form article editor (with AI helpers) */}
             <Route path="/create-article" element={<CreateContent />} />
             <Route path="/categories" element={<Categories />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/wishlist" element={<Wishlist />} />
+            
+            {/* Own profile & public profile routes */}
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/profile/:id" element={<ProfilePage />} />
 
-            {/* Admin-only: RoleRoute redirects non-admins even if they
-                type the URL directly */}
+            {/* Admin-only routes */}
             <Route element={<RoleRoute allow={['admin']} />}>
               <Route path="/admin" element={<AdminDashboard />} />
             </Route>
@@ -75,7 +70,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
 
-      {/* Floating AI Widget */}
       <AiGenerator />
     </BrowserRouter>
   );

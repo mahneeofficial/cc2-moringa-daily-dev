@@ -1,10 +1,9 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from app.utils import iso_utc
-
 from app.extensions import db
 from app.models import Comment, Content, User
+from app.utils import iso_utc
 
 comments_bp = Blueprint("comments", __name__)
 
@@ -15,7 +14,11 @@ def safe_get_user_id():
     if not identity:
         return None
     if isinstance(identity, dict):
-        return int(identity.get("id"))
+        return int(
+            identity.get("id")
+            or identity.get("user_id")
+            or identity.get("UserID")
+        )
     return int(identity)
 
 
@@ -227,7 +230,10 @@ def delete_comment(comment_id):
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid user identity"}), 400
 
-    if comment.UserID != user_id:
+    current_user = db.session.get(User, user_id)
+    is_admin = bool(current_user and str(getattr(current_user, "Role", "")).lower() == "admin")
+
+    if comment.UserID != user_id and not is_admin:
         return jsonify({"error": "You can only delete your own comments."}), 403
 
     try:

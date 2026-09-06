@@ -1,21 +1,33 @@
-from flask import Flask, jsonify
 import os
+from datetime import timedelta
+from flask import Flask, jsonify
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 
-from app.extensions import db, migrate, jwt, bcrypt, cors, ma
+from app.extensions import bcrypt, cors, db, jwt, limiter, ma, migrate
 from config import config_by_name
 
 
+# Enable Foreign Key Support in SQLite databases
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+    except Exception:
+        pass
+
+
 def create_app(config_class=None, config_name=None):
-    # Accept either kwarg (`config_class` or `config_name`) so callers
-    # like run.py's create_app(config_name="development") don't crash.
     if config_class is None:
         config_class = config_name or "development"
     app = Flask(__name__)
 
-    # Load configuration
     app.config.from_object(config_by_name[config_class])
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
+    app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
-    # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
@@ -29,42 +41,37 @@ def create_app(config_class=None, config_name=None):
         }
     )
     ma.init_app(app)
+    limiter.init_app(app)
 
-    # Import models
     with app.app_context():
         from app import models
 
-    # Import route Blueprints
-    from app.routes.auth_profile import auth_profile_bp
-    from app.routes.profile import profiles_bp
-    from app.routes.categories import categories_bp
-    from app.routes.content import content_bp
-    from app.routes.comments import comments_bp
-    from app.routes.interactions import interactions_bp
-    from app.routes.notifications import notifications_bp
-    from app.routes.reports import reports_bp
-    from app.routes.subscriptions import subscriptions_bp
-    from app.routes.comment_reactions import comment_reactions_bp
     from app.routes.admin import admin_bp
     from app.routes.ai_routes import ai_bp
+    from app.routes.auth_profile import auth_profile_bp
+    from app.routes.categories import categories_bp
+    from app.routes.comment_reactions import comment_reactions_bp
+    from app.routes.comments import comments_bp
+    from app.routes.content import content_bp
+    from app.routes.interactions import interactions_bp
+    from app.routes.media import media_bp  # Registered media upload blueprint
+    from app.routes.notifications import notifications_bp
+    from app.routes.profile import profiles_bp
+    from app.routes.reports import reports_bp
+    from app.routes.subscriptions import subscriptions_bp
 
-    # Register Blueprints
-    # auth_profile_bp carries /auth/register, /auth/login, /auth/logout,
-    # /auth/forgot-password, /auth/reset-password, /auth/change-password,
-    # /me and /auth/me (profile of the logged-in user).
     app.register_blueprint(auth_profile_bp, url_prefix="/api")
     app.register_blueprint(profiles_bp, url_prefix="/api/profiles")
     app.register_blueprint(categories_bp, url_prefix="/api/categories")
     app.register_blueprint(content_bp, url_prefix="/api/content")
+    app.register_blueprint(media_bp)  # Handles /api/upload
     app.register_blueprint(ai_bp, url_prefix="/api/ai")
     app.register_blueprint(comments_bp, url_prefix="/api")
     app.register_blueprint(interactions_bp, url_prefix="/api")
     app.register_blueprint(
         notifications_bp,
-        url_prefix="/api/users/me/notifications"
+        url_prefix="/api/notifications"
     )
-    # FIX: subscriptions used to sit under /api with "" routes, so
-    # /api/subscriptions 404'd (and its CORS preflight failed).
     app.register_blueprint(
         subscriptions_bp,
         url_prefix="/api/subscriptions"
@@ -79,24 +86,20 @@ def create_app(config_class=None, config_name=None):
     )
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
-    # ------------------------------------------------------------------
-    # JSON error handling
-    # ------------------------------------------------------------------
-    # Without this, an unhandled exception in debug mode escalates to the
-    # Werkzeug debugger page, which carries NO CORS headers — the browser
-    # then reports a misleading CORS error instead of the real problem.
-    # Returning JSON keeps flask-cors's headers on every error response.
     from werkzeug.exceptions import HTTPException
-
     from app.schema_doctor import (
         check_and_repair,
         looks_like_schema_drift,
         schema_drift_hint,
     )
 
-    # Request-time drift self-heal: only attempt a repair once per process
-    # so a genuinely broken schema can't turn every request into a repair run.
     _drift_repair_attempted = False
+
+    @app.errorhandler(413)
+    def request_entity_too_large(error):
+        return jsonify({
+            "error": "File size exceeds the maximum permitted limit of 50MB."
+        }), 413
 
     @app.errorhandler(Exception)
     def handle_uncaught_error(error):
@@ -119,8 +122,6 @@ def create_app(config_class=None, config_name=None):
                         "schema updated" if repaired else "nothing to update",
                     )
                     if repaired:
-                        # Tell the client the DB was JUST repaired so it can
-                        # transparently retry the same request once.
                         return (
                             jsonify({
                                 "error": "Database schema was just repaired automatically. Please retry.",
@@ -135,11 +136,6 @@ def create_app(config_class=None, config_name=None):
 
         return jsonify({"error": message, "details": details}), 500
 
-    # ------------------------------------------------------------------
-    # Startup schema self-check (dev server)
-    # ------------------------------------------------------------------
-    # `python run.py` sets MORINGA_AUTO_REPAIR so an old local database is
-    # repaired automatically on boot. Skipped for tests / alembic commands.
     if os.environ.get("MORINGA_AUTO_REPAIR") == "1" and not app.config.get("TESTING"):
         try:
             from app.schema_doctor import check_and_repair

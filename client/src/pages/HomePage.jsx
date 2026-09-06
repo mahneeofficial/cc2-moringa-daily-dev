@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../services/apiClient';
 import Navbar from '../components/Navbar';
 import SidebarLeft from '../components/SidebarLeft';
 import SidebarRight from '../components/SidebarRight';
@@ -31,43 +31,33 @@ export default function HomePage() {
   };
 
   // Fetch categories from backend database
- useEffect(() => {
-  axios.get('http://localhost:5001/api/categories')
-    .then((res) => {
-      const catArray = Array.isArray(res.data) ? res.data : (res.data?.categories || res.data?.items || []);
-      setCategories(catArray);
-    })
-    .catch((err) => console.error("Error fetching categories:", err));
-}, []);
+  useEffect(() => {
+    apiClient.get('/categories')
+      .then((res) => {
+        const catArray = Array.isArray(res.data) ? res.data : (res.data?.categories || res.data?.items || []);
+        setCategories(catArray);
+      })
+      .catch((err) => console.error("Error fetching categories:", err));
+  }, []);
 
-  // Fetch content feed from backend database (Checks all possible token keys)
   // Fetch content feed from backend database
-useEffect(() => {
-  const url = currentTab.toLowerCase() === 'all'
-    ? 'http://localhost:5001/api/content'
-    : `http://localhost:5001/api/content?category=${currentTab}`;
+  useEffect(() => {
+    const endpoint = currentTab.toLowerCase() === 'all'
+      ? '/content'
+      : `/content?category=${encodeURIComponent(currentTab)}`;
 
-  const token = 
-    localStorage.getItem('token') || 
-    localStorage.getItem('access_token') || 
-    localStorage.getItem('jwt') || 
-    localStorage.getItem('accessToken');
+    apiClient.get(endpoint)
+      .then((res) => {
+        const itemsArray = res.data?.items || (Array.isArray(res.data) ? res.data : []);
+        setPosts(itemsArray);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Error fetching content feed:", err);
+        setLoading(false);
+      });
+  }, [currentTab]);
 
-  axios.get(url, {
-    headers: {
-      ...(token && { Authorization: `Bearer ${token}` })
-    }
-  })
-    .then((res) => {
-      const itemsArray = res.data?.items || (Array.isArray(res.data) ? res.data : []);
-      setPosts(itemsArray);
-      setLoading(false);
-    })
-    .catch((err) => {
-      console.error("Error fetching content feed:", err);
-      setLoading(false);
-    });
-}, [currentTab]);
   // Filter posts based on search input
   const filteredPosts = posts.filter((post) => {
     const title = post.Title || post.title || '';

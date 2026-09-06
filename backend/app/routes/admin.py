@@ -1,8 +1,10 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
+from werkzeug.security import generate_password_hash
 
 from app.extensions import db
 from app.models import Content, Notification, Profile, User
+from app.routes.notifications import notify_approval, notify_rejection
 from app.utils import iso_utc, role_required
 
 admin_bp = Blueprint("admin", __name__)
@@ -10,8 +12,7 @@ admin_bp = Blueprint("admin", __name__)
 
 # --------------------- CONTENT MODERATION --------------------- #
 
-# Endpoint: GET /api/admin/pending-content
-@admin_bp.get("/pending-content",strict_slashes=False)
+@admin_bp.get("/pending-content", strict_slashes=False)
 @jwt_required()
 @role_required("Admin")
 def get_pending_content():
@@ -21,42 +22,49 @@ def get_pending_content():
         .all()
     )
 
-    pending_data = [
-        {
-            "id": item.ContentID,
-            "content_id": item.ContentID,
-            "title": item.Title,
-            "description": getattr(item, "Description", ""),
-            "content_type": getattr(item, "ContentType", ""),
-            "type": getattr(item, "ContentType", ""),
-            "content_url": getattr(item, "ContentURL", ""),
-            "url": getattr(item, "ContentURL", ""),
-            "thumbnail": getattr(item, "ThumbnailURL", None),
-            "duration": getattr(item, "Duration", None),
-            "status": item.Status,
-            "created_at": (
-                iso_utc(item.CreatedAt)
-            ),
-            "createdAt": (
-                iso_utc(item.CreatedAt)
-            ),
-            "author": (
-                item.author.Username if getattr(item, "author", None) else "Unknown"
-            ),
-            "author_username": (
-                item.author.Username if getattr(item, "author", None) else "Unknown"
-            ),
-            "categories": [
-                {"id": cat.CategoryID, "name": cat.Name}
-                for cat in getattr(item, "categories", [])
-            ],
-            "category": (
-                {"id": item.categories[0].CategoryID, "name": item.categories[0].Name}
-                if getattr(item, "categories", None) else None
-            ),
-        }
-        for item in pending_items
-    ]
+    pending_data = []
+    for item in pending_items:
+        author_username = (
+            item.author.Username
+            if getattr(item, "author", None)
+            else "Anonymous"
+        )
+
+        profile_img = None
+        if getattr(item, "author", None) and getattr(
+            item.author, "profile", None
+        ):
+            profile_img = getattr(item.author.profile, "ProfileImage", None)
+
+        categories = [
+            {"id": cat.CategoryID, "name": cat.Name}
+            for cat in getattr(item, "categories", [])
+        ]
+
+        pending_data.append(
+            {
+                "id": item.ContentID,
+                "content_id": item.ContentID,
+                "title": item.Title,
+                "description": getattr(item, "Description", ""),
+                "content_type": getattr(item, "ContentType", ""),
+                "type": getattr(item, "ContentType", ""),
+                "content_url": getattr(item, "ContentURL", ""),
+                "url": getattr(item, "ContentURL", ""),
+                "status": item.Status,
+                "created_at": iso_utc(item.CreatedAt),
+                "createdAt": iso_utc(item.CreatedAt),
+                "author_id": item.UserID,
+                "author": {
+                    "username": author_username,
+                    "profile_image": profile_img,
+                },
+                "author_username": author_username,
+                "categories": categories,
+                "category": categories[0] if categories else None,
+            }
+        )
+
     return jsonify(pending_data), 200
 
 
@@ -68,8 +76,6 @@ def update_content_status(content_id):
     new_status = data.get("status")
     reason = data.get("reason", "").strip()
 
-    # "Rejected" is accepted from clients but stored as "Archived" because the
-    # DB check constraint only allows Draft/Pending/Published/Archived.
     stored_status = "Archived" if new_status == "Rejected" else new_status
 
     if stored_status not in ["Published", "Archived", "Pending"]:
@@ -84,22 +90,12 @@ def update_content_status(content_id):
 
     if stored_status == "Published":
         content.IsApproved = True
-        content.RejectionReason = None
-        notif_msg = f"Your submission '{content.Title}' has been approved and published!"
+        if hasattr(content, "RejectionReason"):
+            content.RejectionReason = None
     else:
         content.IsApproved = False
-        content.RejectionReason = reason or "No specific reason provided."
-        notif_msg = f"Your submission '{content.Title}' was rejected. Reason: {content.RejectionReason}"
-
-    # Only create notification if content has an associated UserID
-    if getattr(content, "UserID", None):
-        new_notif = Notification(
-            UserID=content.UserID,
-            ContentID=content.ContentID,
-            Message=notif_msg,
-            IsRead=False,
-        )
-        db.session.add(new_notif)
+        if hasattr(content, "RejectionReason"):
+            content.RejectionReason = reason or "No specific reason provided."
 
     try:
         db.session.commit()
@@ -107,21 +103,34 @@ def update_content_status(content_id):
         db.session.rollback()
         return jsonify({"error": f"Database commit error: {str(e)}"}), 500
 
-    # A Pending post just went live -> notify everyone subscribed to its
-    # categories (their feeds changed).
+    # Trigger user notifications via helper functions
+    if getattr(content, "UserID", None):
+        if stored_status == "Published":
+            notify_approval(content.UserID, content.ContentID, content.Title)
+        else:
+            notify_rejection(
+                content.UserID, content.ContentID, content.Title, reason
+            )
+
     if stored_status == "Published" and was_pending:
         try:
-            from app.Routes.content import _notify_subscribers
+            from app.routes.content import _notify_subscribers
+
             _notify_subscribers(content)
         except Exception:
             pass
 
-    return jsonify({
-        "message": f"Content successfully marked as {stored_status}.",
-        "status": stored_status,
-    }), 200
+    return (
+        jsonify(
+            {
+                "message": f"Content successfully marked as {stored_status}.",
+                "status": stored_status,
+            }
+        ),
+        200,
+    )
 
-# Endpoint: DELETE /api/admin/content/<int:content_id>
+
 @admin_bp.delete("/content/<int:content_id>")
 @jwt_required()
 @role_required("Admin")
@@ -130,7 +139,6 @@ def delete_content(content_id):
     if not content:
         return jsonify({"error": "Content not found."}), 404
 
-    # Remove associated notifications first to prevent foreign key constraint issues
     Notification.query.filter_by(ContentID=content_id).delete()
 
     db.session.delete(content)
@@ -141,29 +149,45 @@ def delete_content(content_id):
 
 # --------------------- USER MANAGEMENT --------------------- #
 
-# Endpoint: GET /api/admin/users
-@admin_bp.get("/users",strict_slashes=False)
+@admin_bp.get("/users", strict_slashes=False)
 @jwt_required()
 @role_required("Admin")
 def list_all_users():
-    users = User.query.all()
-    return (
-        jsonify([
+    users = User.query.order_by(User.UserID.desc()).all()
+
+    users_data = []
+    for user in users:
+        profile_img = (
+            getattr(user.profile, "ProfileImage", None)
+            if getattr(user, "profile", None)
+            else None
+        )
+        bio = (
+            getattr(user.profile, "Bio", "")
+            if getattr(user, "profile", None)
+            else ""
+        )
+        content_count = Content.query.filter_by(UserID=user.UserID).count()
+
+        users_data.append(
             {
                 "id": user.UserID,
+                "user_id": user.UserID,
                 "username": user.Username,
                 "email": user.Email,
                 "role": user.Role,
                 "is_active": user.IsActive,
                 "isActive": user.IsActive,
+                "profile_image": profile_img,
+                "bio": bio,
+                "total_posts": content_count,
+                "created_at": iso_utc(getattr(user, "CreatedAt", None)),
             }
-            for user in users
-        ]),
-        200,
-    )
+        )
+
+    return jsonify(users_data), 200
 
 
-# Endpoint: POST /api/admin/users
 @admin_bp.post("/users")
 @jwt_required()
 @role_required("Admin")
@@ -178,7 +202,10 @@ def admin_add_user():
         role = "user"
 
     if not username or not email or not password:
-        return jsonify({"error": "Username, email, and password are required."}), 400
+        return (
+            jsonify({"error": "Username, email, and password are required."}),
+            400,
+        )
 
     existing = User.query.filter(
         (User.Username == username) | (User.Email == email)
@@ -194,11 +221,10 @@ def admin_add_user():
         IsActive=True,
     )
 
-    # Securely hash password
     if hasattr(new_user, "set_password"):
         new_user.set_password(password)
     else:
-        new_user.password_hash = password
+        new_user.PasswordHash = generate_password_hash(password)
 
     db.session.add(new_user)
     db.session.flush()
@@ -207,12 +233,18 @@ def admin_add_user():
     db.session.commit()
 
     return (
-        jsonify({"message": "User added successfully.", "user_id": new_user.UserID}),
+        jsonify(
+            {
+                "message": "User added successfully.",
+                "user_id": new_user.UserID,
+                "username": new_user.Username,
+                "role": new_user.Role,
+            }
+        ),
         201,
     )
 
 
-# Endpoint: PATCH /api/admin/users/<int:user_id>/status
 @admin_bp.patch("/users/<int:user_id>/status")
 @jwt_required()
 @role_required("Admin")
@@ -225,4 +257,12 @@ def toggle_user_status(user_id):
     db.session.commit()
 
     status_str = "activated" if user.IsActive else "deactivated"
-    return jsonify({"message": f"User '{user.Username}' has been {status_str}."}), 200
+    return (
+        jsonify(
+            {
+                "message": f"User '{user.Username}' has been {status_str}.",
+                "is_active": user.IsActive,
+            }
+        ),
+        200,
+    )

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSelector } from "react-redux";
+import { Link } from "react-router-dom";
 import { CornerDownRight, Pencil, Trash2 } from "lucide-react";
 import { selectCurrentUser } from "../../features/auth/authSlice";
 import { timeAgo } from "../../utils/format";
@@ -40,13 +41,34 @@ export default function CommentThread({ comment, onReply, onEdit, onDelete, dept
     setConfirmingDelete(false);
   }
 
+  const authorId = comment.author?.id;
+
   return (
     <div className={depth > 0 ? "ml-6 pl-4 border-l border-line" : ""}>
       <div className="flex gap-3">
-        <Avatar username={comment.author?.username} role={comment.author?.role} size="sm" />
+        {/* Clickable Profile Avatar */}
+        {authorId ? (
+          <Link to={`/profile/${authorId}`}>
+            <Avatar username={comment.author?.username} role={comment.author?.role} size="sm" />
+          </Link>
+        ) : (
+          <Avatar username={comment.author?.username} role={comment.author?.role} size="sm" />
+        )}
+
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-navy">{comment.author?.username}</span>
+            {/* Clickable Author Username */}
+            {authorId ? (
+              <Link
+                to={`/profile/${authorId}`}
+                className="text-sm font-medium text-navy hover:text-brand-500 hover:underline transition"
+              >
+                {comment.author?.username}
+              </Link>
+            ) : (
+              <span className="text-sm font-medium text-navy">{comment.author?.username}</span>
+            )}
+
             <RoleBadge role={comment.author?.role} />
             <span className="text-[11px] text-muted font-mono">{timeAgo(comment.createdAt)}</span>
             {comment.updatedAt && !comment.deleted && (
@@ -160,4 +182,3 @@ export default function CommentThread({ comment, onReply, onEdit, onDelete, dept
     </div>
   );
 }
-

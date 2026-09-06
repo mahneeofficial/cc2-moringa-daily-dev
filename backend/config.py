@@ -21,12 +21,11 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_SORT_KEYS = False
 
-    # Uploads must land inside the folder Flask actually serves /static/
-    # from (backend/app/static), otherwise uploaded media 404s.
+    # Uploads directory served by Flask static
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "app", "static", "uploads")
 
-    # 64 MB upload ceiling (images/video/audio posts)
-    MAX_CONTENT_LENGTH = 64 * 1024 * 1024
+    # 50 MB upload ceiling (matches app/__init__.py and route error handlers)
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024
 
     # Password reset
     FRONTEND_URL = os.environ.get(
@@ -74,8 +73,7 @@ class DevelopmentConfig(Config):
 
 
 def _normalize_database_uri(uri):
-    """Render (and some hosts) hand out postgres://… URLs, which SQLAlchemy
-    1.4+ rejects — it needs postgresql://. Normalise transparently."""
+    """Normalize postgres:// URLs to postgresql:// for SQLAlchemy 1.4+ compatibility."""
     if uri and uri.startswith("postgres://"):
         return uri.replace("postgres://", "postgresql://", 1)
     return uri
