@@ -94,7 +94,20 @@ def main():
                 Role="Admin",
                 IsActive=True,
             )
-            admin.password_hash = ADMIN_PASSWORD
+            
+            # Properly hash and assign password to the PasswordHash column
+            if hasattr(admin, "set_password"):
+                admin.set_password(ADMIN_PASSWORD)
+            elif hasattr(admin, "password"):
+                admin.password = ADMIN_PASSWORD
+            else:
+                try:
+                    from app.extensions import bcrypt
+                    admin.PasswordHash = bcrypt.generate_password_hash(ADMIN_PASSWORD).decode("utf-8")
+                except Exception:
+                    from werkzeug.security import generate_password_hash
+                    admin.PasswordHash = generate_password_hash(ADMIN_PASSWORD)
+
             db.session.add(admin)
             db.session.flush()  # assigns admin.UserID
             db.session.add(Profile(UserID=admin.UserID))
