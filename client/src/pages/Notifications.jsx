@@ -20,7 +20,6 @@ import {
   selectNotificationsStatus,
   selectUnreadCount
 } from "../features/notifications/notificationsSlice";
-import { selectCurrentUser } from "../features/auth/authSlice";
 import { timeAgo } from "../utils/format";
 import EmptyState from "../components/ui/EmptyState";
 import Button from "../components/ui/Button";
@@ -56,42 +55,44 @@ function getNotificationMeta(type) {
 }
 
 export default function Notifications() {
-  const user = useSelector(selectCurrentUser);
   const items = useSelector(selectAllNotifications);
   const status = useSelector(selectNotificationsStatus);
   const unreadCount = useSelector(selectUnreadCount);
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
+  // Fetch on mount without relying on user.id
   useEffect(() => {
-    if (user?.id) {
-      dispatch(fetchNotifications(user.id));
-    }
-  }, [dispatch, user?.id]);
+    dispatch(fetchNotifications());
+  }, [dispatch]);
 
   const handleItemClick = (notification) => {
-    if (!notification.isRead) {
-      dispatch(markNotificationRead(notification.id));
+    const isRead = notification.isRead || notification.is_read || notification.IsRead;
+    const notifId = notification.id || notification.NotificationID;
+    const targetContentId = notification.contentId || notification.content_id || notification.ContentID;
+
+    if (!isRead) {
+      dispatch(markNotificationRead(notifId));
     }
-    if (notification.contentId) {
-      navigate(`/content/${notification.contentId}`);
+    if (targetContentId) {
+      navigate(`/content/${targetContentId}`);
     }
   };
 
   const handleMarkAllRead = () => {
-    if (user?.id && unreadCount > 0) {
-      dispatch(markAllNotificationsRead(user.id));
+    if (unreadCount > 0) {
+      dispatch(markAllNotificationsRead());
     }
   };
 
   const handleDeleteOne = (e, id) => {
-    e.stopPropagation(); // Prevents navigating to post content
+    e.stopPropagation();
     dispatch(deleteNotification(id));
   };
 
   const handleClearAll = () => {
-    if (user?.id && items.length > 0) {
-      dispatch(clearAllNotifications(user.id));
+    if (items.length > 0) {
+      dispatch(clearAllNotifications());
     }
   };
 
@@ -134,14 +135,20 @@ export default function Notifications() {
       ) : (
         <div className="divide-y divide-line border border-line rounded-xl overflow-hidden bg-white">
           {items.map((n) => {
-            const { icon, badge, badgeStyle } = getNotificationMeta(n.type);
+            const notifId = n.id || n.NotificationID;
+            const isRead = n.isRead || n.is_read || n.IsRead;
+            const message = n.message || n.Message;
+            const createdAt = n.createdAt || n.created_at || n.CreatedAt;
+            const type = n.type || n.Type;
+
+            const { icon, badge, badgeStyle } = getNotificationMeta(type);
 
             return (
               <div
-                key={n.id}
+                key={notifId}
                 onClick={() => handleItemClick(n)}
                 className={`flex items-center justify-between gap-3.5 p-4 transition cursor-pointer hover:bg-surface ${
-                  !n.isRead ? "bg-brand-500/5" : ""
+                  !isRead ? "bg-brand-500/5" : ""
                 }`}
               >
                 <div className="flex items-start gap-3.5 min-w-0 flex-1">
@@ -151,18 +158,18 @@ export default function Notifications() {
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border ${badgeStyle}`}>
                         {badge}
                       </span>
-                      <span className="text-[11px] text-muted font-mono">{timeAgo(n.createdAt)}</span>
+                      <span className="text-[11px] text-muted font-mono">{timeAgo(createdAt)}</span>
                     </div>
-                    <p className={`text-sm leading-snug ${!n.isRead ? "text-navy font-medium" : "text-muted"}`}>
-                      {n.message}
+                    <p className={`text-sm leading-snug ${!isRead ? "text-navy font-medium" : "text-muted"}`}>
+                      {message}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  {!n.isRead && <span className="w-2 h-2 rounded-full bg-brand-500" />}
+                  {!isRead && <span className="w-2 h-2 rounded-full bg-brand-500" />}
                   <button
-                    onClick={(e) => handleDeleteOne(e, n.id)}
+                    onClick={(e) => handleDeleteOne(e, notifId)}
                     className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer"
                     title="Delete notification"
                   >

@@ -194,7 +194,6 @@ def login():
     if error:
         return error
 
-    # Admin restriction removed: All valid accounts log in seamlessly
     return _authenticate_and_respond(user)
 
 
@@ -415,4 +414,54 @@ def update_profile():
     if not current_user_id:
         return jsonify({"error": "Invalid token or user identity"}), 401
 
-    profile = Profile.query.filter_
+    profile = Profile.query.filter_by(UserID=current_user_id).first()
+    if not profile:
+        profile = Profile(UserID=current_user_id)
+        db.session.add(profile)
+
+    user = db.session.get(User, current_user_id)
+
+    # Support JSON updates
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        if "bio" in data or "Bio" in data:
+            profile.Bio = data.get("bio") if "bio" in data else data.get("Bio")
+        if "interests" in data or "Interests" in data:
+            profile.Interests = data.get("interests") if "interests" in data else data.get("Interests")
+        if "profile_image" in data or "ProfileImage" in data:
+            profile.ProfileImage = data.get("profile_image") if "profile_image" in data else data.get("ProfileImage")
+        if user and ("username" in data or "Username" in data):
+            user.Username = data.get("username") if "username" in data else data.get("Username")
+
+    # Support Form Data updates (e.g. multipart/form-data for file uploads)
+    else:
+        bio = request.form.get("bio") or request.form.get("Bio")
+        interests = request.form.get("interests") or request.form.get("Interests")
+        username = request.form.get("username") or request.form.get("Username")
+
+        if bio is not None:
+            profile.Bio = bio
+        if interests is not None:
+            profile.Interests = interests
+        if user and username:
+            user.Username = username
+
+        if "file" in request.files:
+            file = request.files["file"]
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                upload_folder = current_app.config.get("UPLOAD_FOLDER", "uploads")
+                os.makedirs(upload_folder, exist_ok=True)
+                file_path = os.path.join(upload_folder, f"user_{current_user_id}_{filename}")
+                file.save(file_path)
+                profile.ProfileImage = f"/static/uploads/user_{current_user_id}_{filename}"
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Profile updated successfully.",
+        "bio": profile.Bio or "",
+        "interests": profile.Interests or "",
+        "profile_image": profile.ProfileImage or "",
+        "username": user.Username if user else "",
+    }), 200
