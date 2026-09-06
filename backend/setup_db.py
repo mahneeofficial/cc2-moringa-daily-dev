@@ -1,7 +1,7 @@
 """Safe database setup & repair — works for fresh clones AND old databases.
 
 Databases created from the previous models are missing columns the code now
-uses (content.Summary / Duration / LikesCount / RejectionReason, users.is_admin)
+uses (content.Summary / Duration / LikesCount / RejectionReason)
 and their `content` status check-constraint doesn't allow 'Pending', which made
 every new learner post fail with a 500. Plain `flask db upgrade` can't fix an
 unstamped (create_all-created) database, so this script repairs the schema
@@ -93,7 +93,6 @@ def main():
                 Email=ADMIN_EMAIL,
                 Role="Admin",
                 IsActive=True,
-                is_admin=True,
             )
             admin.password_hash = ADMIN_PASSWORD
             db.session.add(admin)
