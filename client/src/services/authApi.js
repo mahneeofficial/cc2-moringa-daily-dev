@@ -1,9 +1,9 @@
 import apiRequest from "./api";
 
-export async function register({ username, email, password, role }) {
-  const body = { username, email, password };
-  // Backend accepts "user" | "tech_writer" | "Admin"
-  if (role) body.role = role;
+export async function register({ username, email, password, role = "user" }) {
+  const sanitizedRole = role.toLowerCase() === "admin" ? "user" : role;
+
+  const body = { username, email, password, role: sanitizedRole };
 
   return apiRequest("/api/auth/register", {
     method: "POST",
@@ -11,8 +11,8 @@ export async function register({ username, email, password, role }) {
   });
 }
 
-export async function signUpUser({ username, email, password, role }) {
-  return register({ username, email, password, role });
+export async function signUpUser(data) {
+  return register(data);
 }
 
 export async function login({ username, password }) {
@@ -35,8 +35,8 @@ export async function login({ username, password }) {
   return data;
 }
 
-export async function loginUser({ username, password }) {
-  return login({ username, password });
+export async function loginUser(data) {
+  return login(data);
 }
 
 export async function logout() {
@@ -50,9 +50,25 @@ export async function logout() {
   }
 }
 
-// GET /api/me — the logged-in user incl. profile fields (bio, skills, github)
+// GET /api/me — retrieve user profile matching ERD (bio, interests, profile_image)
 export async function getCurrentUser() {
   return apiRequest("/api/me");
+}
+
+// PUT /api/me — update ERD profile fields (bio, interests, profile_image)
+export async function updateProfile(profileData) {
+  return apiRequest("/api/me", {
+    method: "PUT",
+    body: JSON.stringify(profileData),
+  });
+}
+
+// PUT /api/auth/change-password
+export async function changePassword({ old_password, new_password }) {
+  return apiRequest("/api/auth/change-password", {
+    method: "PUT",
+    body: JSON.stringify({ old_password, new_password }),
+  });
 }
 
 export async function requestPasswordReset(email) {

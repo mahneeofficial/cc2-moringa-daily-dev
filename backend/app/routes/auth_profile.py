@@ -1,4 +1,6 @@
 import os
+import time
+
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -7,10 +9,25 @@ from werkzeug.utils import secure_filename
 from app.email_service import send_password_reset_email
 from app.extensions import db,bcrypt
 from app.models import Content, Profile, User
+from app.routes.notifications import notify_login, notify_signup
 
 auth_profile_bp = Blueprint("auth_profile", __name__)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
+
+RESET_EMAIL_COOLDOWN_SECONDS = 60
+_last_reset_request = {}
+
+
+def _reset_email_on_cooldown(email):
+    now = time.time()
+    last = _last_reset_request.get(email, 0)
+    if now - last < RESET_EMAIL_COOLDOWN_SECONDS:
+        return True
+    if len(_last_reset_request) > 5000:
+        _last_reset_request.clear()
+    _last_reset_request[email] = now
+    return False
 
 
 def allowed_file(filename):
@@ -20,9 +37,18 @@ def allowed_file(filename):
 def safe_get_user_id():
     """Extract integer user ID safely from JWT identity."""
     identity = get_jwt_identity()
-    if isinstance(identity, dict):
-        return int(identity.get("id"))
-    return int(identity)
+    if not identity:
+        return None
+    try:
+        if isinstance(identity, dict):
+            return int(
+                identity.get("id")
+                or identity.get("user_id")
+                or identity.get("UserID")
+            )
+        return int(identity)
+    except (ValueError, TypeError):
+        return None
 
 
 def generate_reset_token(email):
@@ -38,12 +64,23 @@ def verify_reset_token(token):
     except (SignatureExpired, BadSignature):
         return None
 
+<<<<<<< HEAD
+=======
+
+@auth_profile_bp.before_request
+def handle_options():
+    if request.method == "OPTIONS":
+        return "", 200
+
+
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
 # ==========================================
 # AUTHENTICATION ENDPOINTS
 # ==========================================
 
 @auth_profile_bp.post("/register")
 def register():
+<<<<<<< HEAD
     """Register a new user
     ---
     tags:
@@ -92,12 +129,24 @@ def register():
     email = data.get("email")
     password = data.get("password")
     role = data.get("role", "user")
+=======
+    data = request.get_json(silent=True) or {}
+    username = data.get("username") or data.get("Username")
+    email = data.get("email") or data.get("Email")
+    password = data.get("password") or data.get("Password")
+    role = data.get("role") or data.get("Role") or "user"
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
 
     if not username or not email or not password:
         return jsonify({"error": "Username, email, and password are required."}), 400
 
+<<<<<<< HEAD
     allowed_roles = ["user", "tech_writer", "Admin"]
     if role not in allowed_roles:
+=======
+    allowed_roles = ["user", "tech_writer"]
+    if str(role).lower() not in allowed_roles:
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
         role = "user"
 
     existing_user = User.query.filter(
@@ -154,8 +203,70 @@ def login():
         or data.get("username") 
         or data.get("Username")
     )
+<<<<<<< HEAD
     password = data.get("password") or data.get("Password")
 
+=======
+    new_user.set_password(password)
+
+    db.session.add(new_user)
+    db.session.flush()
+
+    new_profile = Profile(UserID=new_user.UserID)
+    db.session.add(new_profile)
+    db.session.commit()
+
+    notify_signup(new_user.UserID, new_user.Username)
+
+    access_token = create_access_token(identity=str(new_user.UserID))
+
+    return (
+        jsonify({
+            "message": "User created successfully.",
+            "token": access_token,
+            "access_token": access_token,
+            "user": {
+                "id": new_user.UserID,
+                "user_id": new_user.UserID,
+                "username": new_user.Username,
+                "email": new_user.Email,
+                "role": new_user.Role,
+                "is_active": new_user.IsActive,
+                "is_admin": False,
+            },
+        }),
+        201,
+    )
+
+
+def _authenticate_and_respond(user, message="Login successful"):
+    access_token = create_access_token(identity=str(user.UserID))
+    role = getattr(user, "Role", "user")
+    is_admin = str(role).lower() == "admin"
+
+    notify_login(user.UserID, user.Username)
+
+    return (
+        jsonify({
+            "token": access_token,
+            "access_token": access_token,
+            "message": message,
+            "user": {
+                "id": user.UserID,
+                "user_id": user.UserID,
+                "username": user.Username,
+                "email": user.Email,
+                "role": role,
+                "is_active": getattr(user, "IsActive", True),
+                "is_admin": is_admin,
+            },
+        }),
+        200,
+    )
+
+
+def _find_and_verify_user(identifier, password):
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
     if not identifier or not password:
         return jsonify({"error": "Email/Username and password are required."}), 400
 
@@ -164,9 +275,76 @@ def login():
         (User.Email == identifier) | (User.Username == identifier)
     ).first()
 
+<<<<<<< HEAD
+=======
+    is_authenticated = False
+    if user:
+        is_authenticated = user.check_password(password)
+
+    if not user or not is_authenticated:
+        return None, (jsonify({"error": "Invalid email/username or password"}), 401)
+
+    if hasattr(user, "IsActive") and not user.IsActive:
+        return None, (jsonify({"error": "Account is inactive"}), 403)
+
+    return user, None
+
+
+@auth_profile_bp.post("/login")
+@auth_profile_bp.post("/auth/login")
+def login():
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("email") or data.get("username") or data.get("Email") or data.get("Username")
+    password = data.get("password") or data.get("Password")
+
+    user, error = _find_and_verify_user(identifier, password)
+    if error:
+        return error
+
+    return _authenticate_and_respond(user)
+
+
+@auth_profile_bp.post("/admin/login")
+@auth_profile_bp.post("/auth/admin/login")
+def admin_login():
+    data = request.get_json(silent=True) or {}
+    identifier = data.get("email") or data.get("username") or data.get("Email") or data.get("Username")
+    password = data.get("password") or data.get("Password")
+
+    user, error = _find_and_verify_user(identifier, password)
+    if error:
+        return error
+
+    if str(getattr(user, "Role", "user") or "user").lower() != "admin":
+        return (
+            jsonify({"error": "This account is not an admin account."}),
+            403,
+        )
+
+    return _authenticate_and_respond(user, message="Admin login successful")
+
+
+@auth_profile_bp.post("/auth/logout")
+@auth_profile_bp.post("/logout")
+def logout():
+    return jsonify({"message": "Logout successful."}), 200
+
+
+@auth_profile_bp.post("/auth/forgot-password")
+@auth_profile_bp.post("/forgot-password")
+def forgot_password():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email") or data.get("Email")
+
+    if not email:
+        return jsonify({"error": "Email is required."}), 400
+
+    user = User.query.filter_by(Email=email).first()
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
     if not user:
         return jsonify({"error": "Invalid email or password"}), 401
 
+<<<<<<< HEAD
     # Check password logic
     if hasattr(user, "check_password"):
         is_valid_password = user.check_password(password)
@@ -175,6 +353,30 @@ def login():
 
     if not is_valid_password:
         return jsonify({"error": "Invalid email or password"}), 401
+=======
+    if _reset_email_on_cooldown(user.Email):
+        return (
+            jsonify({
+                "message": "If an account with that email exists, instructions have been sent."
+            }),
+            200,
+        )
+
+    token = generate_reset_token(user.Email)
+    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:5173")
+    reset_url = f"{frontend_url}/reset-password?token={token}"
+
+    try:
+        send_password_reset_email(user.Email, reset_url)
+    except Exception:
+        current_app.logger.exception("Failed to send password reset email.")
+        if current_app.config.get("DEBUG"):
+            return jsonify({
+                "message": "Email sending is not configured on this server. Development mode link below.",
+                "dev_reset_url": reset_url,
+            }), 200
+        return jsonify({"error": "Unable to send password reset email."}), 500
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
 
     # Generate JWT token
     from flask_jwt_extended import create_access_token
@@ -193,6 +395,7 @@ def login():
     }), 200
 
 
+@auth_profile_bp.post("/auth/reset-password")
 @auth_profile_bp.post("/reset-password")
 def reset_password():
     """Reset password using reset token
@@ -225,7 +428,7 @@ def reset_password():
     """
     data = request.get_json(silent=True) or {}
     token = data.get("token")
-    password = data.get("password")
+    password = data.get("password") or data.get("Password")
 
     if not token or not password:
         return jsonify({"error": "Token and password are required."}), 400
@@ -241,18 +444,17 @@ def reset_password():
     if not user:
         return jsonify({"error": "User not found."}), 404
 
-    if hasattr(user, "set_password"):
-        user.set_password(password)
-    else:
-        user.password_hash = password
+    user.set_password(password)
 
     db.session.commit()
     return jsonify({"message": "Password reset successful."}), 200
 
 
+@auth_profile_bp.put("/auth/change-password")
 @auth_profile_bp.put("/change-password")
 @jwt_required()
 def change_password():
+<<<<<<< HEAD
     """Change password for currently authenticated user
     ---
     tags:
@@ -288,6 +490,10 @@ def change_password():
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
+=======
+    user_id = safe_get_user_id()
+    if not user_id:
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
         return jsonify({"error": "Invalid user identity"}), 400
 
     user = db.session.get(User, user_id)
@@ -295,25 +501,16 @@ def change_password():
         return jsonify({"error": "User not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    old_password = data.get("old_password")
-    new_password = data.get("new_password")
+    old_password = data.get("old_password") or data.get("oldPassword")
+    new_password = data.get("new_password") or data.get("newPassword")
 
     if not old_password or not new_password:
         return jsonify({"error": "Both old and new passwords are required."}), 400
 
-    is_valid_old = False
-    if hasattr(user, "check_password"):
-        is_valid_old = user.check_password(old_password)
-    elif hasattr(user, "authenticate"):
-        is_valid_old = user.authenticate(old_password)
-
-    if not is_valid_old:
+    if not user.check_password(old_password):
         return jsonify({"error": "Current password is incorrect."}), 400
 
-    if hasattr(user, "set_password"):
-        user.set_password(new_password)
-    else:
-        user.password_hash = new_password
+    user.set_password(new_password)
 
     db.session.commit()
     return jsonify({"message": "Password updated successfully."}), 200
@@ -323,10 +520,14 @@ def change_password():
 # PROFILE ENDPOINTS
 # ==========================================
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
 @auth_profile_bp.get("/me")
 @jwt_required()
 def get_my_profile():
+<<<<<<< HEAD
     """Get current authenticated user profile
     ---
     tags:
@@ -342,6 +543,11 @@ def get_my_profile():
         description: User not found
     """
     current_user_id = safe_get_user_id()
+=======
+    current_user_id = safe_get_user_id()
+    if not current_user_id:
+        return jsonify({"error": "Invalid token or user identity"}), 401
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
 
     user = db.session.get(User, current_user_id)
     if not user:
@@ -370,6 +576,7 @@ def get_my_profile():
     ]
 
     role = getattr(user, "Role", "user")
+<<<<<<< HEAD
     is_admin = getattr(user, "is_admin", False) or (role.lower() == "admin")
 
     return (
@@ -461,18 +668,54 @@ def update_profile():
 
     return jsonify({
         "message": "Profile updated successfully.",
+=======
+    is_admin = str(role).lower() == "admin"
+
+    return jsonify({
+        "id": user.UserID,
+        "user_id": user.UserID,
+        "username": user.Username,
+        "email": user.Email,
+        "role": role,
+        "is_active": getattr(user, "IsActive", True),
+        "is_admin": is_admin,
+        "bio": profile.Bio or "",
+        "interests": profile.Interests or "",
+        "profile_image": profile.ProfileImage or "",
+        "created_at": profile.CreatedAt.isoformat() if hasattr(profile, "CreatedAt") and profile.CreatedAt else None,
+        "updated_at": profile.UpdatedAt.isoformat() if hasattr(profile, "UpdatedAt") and profile.UpdatedAt else None,
+        "posts_count": len(user_posts),
+        "posts": posts_data,
+        "user": {
+            "id": user.UserID,
+            "user_id": user.UserID,
+            "username": user.Username,
+            "email": user.Email,
+            "role": role,
+            "is_active": getattr(user, "IsActive", True),
+            "is_admin": is_admin,
+        },
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
         "profile": {
             "profile_id": profile.ProfileID,
             "user_id": profile.UserID,
             "bio": profile.Bio or "",
             "interests": profile.Interests or "",
+<<<<<<< HEAD
             "skills": getattr(profile, "Skills", "") or "",
             "github_profile": getattr(profile, "GithubProfile", "") or "",
+=======
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
             "profile_image": profile.ProfileImage or "",
+            "created_at": profile.CreatedAt.isoformat() if hasattr(profile, "CreatedAt") and profile.CreatedAt else None,
+            "updated_at": profile.UpdatedAt.isoformat() if hasattr(profile, "UpdatedAt") and profile.UpdatedAt else None,
+            "posts_count": len(user_posts),
+            "posts": posts_data,
         }
     }), 200
 
 
+<<<<<<< HEAD
 @auth_profile_bp.patch("/avatar")
 @jwt_required()
 def update_profile_avatar():
@@ -497,42 +740,61 @@ def update_profile_avatar():
       401:
         description: Unauthorized
     """
+=======
+@auth_profile_bp.route("/me", methods=["PUT", "POST", "PATCH"])
+@auth_profile_bp.route("/auth/me", methods=["PUT", "POST", "PATCH"])
+@jwt_required()
+def update_profile():
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
     current_user_id = safe_get_user_id()
+    if not current_user_id:
+        return jsonify({"error": "Invalid token or user identity"}), 401
 
     profile = Profile.query.filter_by(UserID=current_user_id).first()
     if not profile:
         profile = Profile(UserID=current_user_id)
         db.session.add(profile)
 
-    file = request.files.get("profile_picture") or request.files.get("avatar")
-    if not file or file.filename == "":
-        return jsonify({"error": "No avatar file provided"}), 400
+    user = db.session.get(User, current_user_id)
 
-    if file and allowed_file(file.filename):
-        filename = (
-            f"avatar_user_{current_user_id}_{secure_filename(file.filename)}"
-        )
-        upload_folder = os.path.join(
-            current_app.root_path, "static", "uploads", "avatars"
-        )
-        os.makedirs(upload_folder, exist_ok=True)
+    # Support JSON updates
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        if "bio" in data or "Bio" in data:
+            profile.Bio = data.get("bio") if "bio" in data else data.get("Bio")
+        if "interests" in data or "Interests" in data:
+            profile.Interests = data.get("interests") if "interests" in data else data.get("Interests")
+        if "profile_image" in data or "ProfileImage" in data:
+            profile.ProfileImage = data.get("profile_image") if "profile_image" in data else data.get("ProfileImage")
+        if user and ("username" in data or "Username" in data):
+            user.Username = data.get("username") if "username" in data else data.get("Username")
 
-        filepath = os.path.join(upload_folder, filename)
-        file.save(filepath)
+    # Support Form Data updates (e.g. multipart/form-data for file uploads)
+    else:
+        bio = request.form.get("bio") or request.form.get("Bio")
+        interests = request.form.get("interests") or request.form.get("Interests")
+        username = request.form.get("username") or request.form.get("Username")
 
-        profile.ProfileImage = f"/static/uploads/avatars/{filename}"
-        db.session.commit()
+        if bio is not None:
+            profile.Bio = bio
+        if interests is not None:
+            profile.Interests = interests
+        if user and username:
+            user.Username = username
 
-        return (
-            jsonify({
-                "message": "Profile picture updated successfully",
-                "profile_image": profile.ProfileImage,
-            }),
-            200,
-        )
+        if "file" in request.files:
+            file = request.files["file"]
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                upload_folder = current_app.config.get("UPLOAD_FOLDER", "uploads")
+                os.makedirs(upload_folder, exist_ok=True)
+                file_path = os.path.join(upload_folder, f"user_{current_user_id}_{filename}")
+                file.save(file_path)
+                profile.ProfileImage = f"/static/uploads/user_{current_user_id}_{filename}"
 
-    return jsonify({"error": "Invalid file format."}), 400
+    db.session.commit()
 
+<<<<<<< HEAD
 
 @auth_profile_bp.get("/users/<int:user_id>")
 def get_public_profile(user_id):
@@ -567,3 +829,12 @@ def get_public_profile(user_id):
         }),
         200,
     )
+=======
+    return jsonify({
+        "message": "Profile updated successfully.",
+        "bio": profile.Bio or "",
+        "interests": profile.Interests or "",
+        "profile_image": profile.ProfileImage or "",
+        "username": user.Username if user else "",
+    }), 200
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03

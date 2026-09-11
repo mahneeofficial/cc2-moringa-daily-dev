@@ -1,18 +1,16 @@
 from flask import Blueprint, jsonify, request
-from flask_jwt_extended import jwt_required, get_jwt_identity
-
-from app.utils import iso_utc
+from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.extensions import db
 from app.models import (
+    Bookmark,
     Content,
     ContentReaction,
     Notification,
     Share,
     User,
-    Wishlist,
 )
-
+from app.utils import iso_utc
 
 interactions_bp = Blueprint("interactions", __name__)
 
@@ -48,7 +46,6 @@ def _reaction_summary(content_id, user_id=None):
         "likes": likes,
         "dislikes": dislikes,
         "userReaction": user_reaction,
-        # snake_case duplicates so both frontend styles work
         "likes_count": likes,
         "dislikes_count": dislikes,
         "user_reaction": user_reaction,
@@ -126,6 +123,7 @@ def toggle_like(post_id):
                     notification = Notification(
                         UserID=content.UserID,
                         ContentID=content.ContentID,
+                        Type="like",
                         Message=f"{current_user.Username} liked your post: '{content.Title}'",
                     )
                     db.session.add(notification)
@@ -141,13 +139,10 @@ def toggle_like(post_id):
             ContentID=post_id, Reaction="like"
         ).count()
 
-        if hasattr(content, "LikesCount"):
-            content.LikesCount = actual_likes_count
-            db.session.commit()
-
         is_liked = ContentReaction.query.filter_by(
             ContentID=post_id, UserID=current_user_id, Reaction="like"
         ).first() is not None
+
         comments_count = len(content.comments) if hasattr(content, "comments") else 0
         formatted_date = (
             content.CreatedAt.strftime("%d %b %Y") if content.CreatedAt else None
@@ -164,6 +159,8 @@ def toggle_like(post_id):
             "created_at": formatted_date,
             "title": content.Title,
             "description": content.Description,
+            "body": content.Body,
+            "slug": content.Slug,
             "status": content.Status,
             "author": {
                 "username": (
@@ -176,7 +173,7 @@ def toggle_like(post_id):
                 ),
             },
             "categories": [
-                {"id": cat.CategoryID, "name": cat.Name}
+                {"id": cat.CategoryID, "name": cat.Name, "slug": cat.Slug}
                 for cat in getattr(content, "categories", [])
             ],
         }), 200
@@ -186,9 +183,6 @@ def toggle_like(post_id):
         return jsonify({"error": "Failed to update like status", "details": str(e)}), 500
 
 
-# -------------------------------------------------------------------
-# GET reaction summary (likes / dislikes / current user's reaction)
-# -------------------------------------------------------------------
 @interactions_bp.get("/content/<int:content_id>/reactions")
 @jwt_required(optional=True)
 def get_reaction_summary(content_id):
@@ -204,10 +198,6 @@ def get_reaction_summary(content_id):
     return jsonify(_reaction_summary(content_id, user_id)), 200
 
 
-# -------------------------------------------------------------------
-# POST a reaction ("like" / "dislike") — clicking the same reaction
-# again toggles it off (Instagram-style).
-# -------------------------------------------------------------------
 @interactions_bp.post("/content/<int:content_id>/reactions")
 @jwt_required()
 def react_to_content(content_id):
@@ -277,7 +267,6 @@ def react_to_content(content_id):
         toggled_off = False
         if existing:
             if existing.Reaction == reaction_type:
-                # Same reaction again -> remove it (toggle off)
                 db.session.delete(existing)
                 toggled_off = True
             else:
@@ -288,23 +277,17 @@ def react_to_content(content_id):
             )
             db.session.add(reaction)
 
-        # Notify the author when someone likes their content
         if reaction_type == "like" and not toggled_off and content.UserID != user_id:
             db.session.add(
                 Notification(
                     UserID=content.UserID,
                     ContentID=content.ContentID,
+                    Type="like",
                     Message=f"{current_user.Username} liked your post: '{content.Title}'",
                 )
             )
 
         db.session.commit()
-
-        if hasattr(content, "LikesCount"):
-            content.LikesCount = ContentReaction.query.filter_by(
-                ContentID=content_id, Reaction="like"
-            ).count()
-            db.session.commit()
 
         summary = _reaction_summary(content_id, user_id)
         summary["message"] = (
@@ -360,17 +343,13 @@ def share_content(content_id):
     if not content:
         return jsonify({"error": "Content not found"}), 404
 
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "No input data provided."}), 400
-
+    data = request.get_json(silent=True) or {}
     shared_with_user_id = data.get("shared_with_user_id")
-    if not shared_with_user_id:
-        return jsonify({"error": "shared_with_user_id is required."}), 400
 
-    target_user = db.session.get(User, shared_with_user_id)
-    if not target_user:
-        return jsonify({"error": "Target user not found"}), 404
+    if shared_with_user_id:
+        target_user = db.session.get(User, shared_with_user_id)
+        if not target_user:
+            return jsonify({"error": "Target user not found"}), 404
 
     try:
         share = Share(
@@ -381,18 +360,20 @@ def share_content(content_id):
         db.session.add(share)
         db.session.commit()
 
-        return jsonify({"message": "Share recorded."}), 200
+        return jsonify({"message": "Share recorded.", "share_id": share.ShareID}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": "Failed to record share", "details": str(e)}), 500
 
 
 # ==========================================
-# 3. WISHLIST
+# 3. BOOKMARKS / WISHLIST
 # ==========================================
 
+@interactions_bp.get("/users/me/bookmarks")
 @interactions_bp.get("/users/me/wishlist")
 @jwt_required()
+<<<<<<< HEAD
 def get_wishlist():
     """Get the current authenticated user's wishlist.
     ---
@@ -406,16 +387,69 @@ def get_wishlist():
       401:
         description: Unauthorized.
     """
+=======
+def get_bookmarks():
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
     user_id = safe_get_user_id()
-    items = Wishlist.query.filter_by(UserID=user_id).all()
+    items = Bookmark.query.filter_by(UserID=user_id).order_by(Bookmark.BookmarkID.desc()).all()
 
-    return jsonify(
-        [{"id": wishlist.WishlistID, "content_id": wishlist.ContentID} for wishlist in items]
-    ), 200
+    response = []
+    for b in items:
+        content = b.content
+        if not content:
+            continue
+
+        comments_count = len(content.comments) if hasattr(content, "comments") else 0
+        actual_likes_count = ContentReaction.query.filter_by(
+            ContentID=content.ContentID, Reaction="like"
+        ).count()
+        is_liked = ContentReaction.query.filter_by(
+            ContentID=content.ContentID, UserID=user_id, Reaction="like"
+        ).first() is not None
+
+        response.append({
+            "id": b.BookmarkID,
+            "bookmark_id": b.BookmarkID,
+            "wishlist_id": b.BookmarkID,
+            "content_id": content.ContentID,
+            "content": {
+                "id": content.ContentID,
+                "content_id": content.ContentID,
+                "title": content.Title,
+                "slug": content.Slug,
+                "description": content.Description,
+                "body": content.Body,
+                "content_type": content.ContentType,
+                "content_url": content.ContentURL,
+                "status": content.Status,
+                "is_liked": is_liked,
+                "is_bookmarked": True,
+                "likes_count": actual_likes_count,
+                "views_count": getattr(content, "ViewsCount", 0),
+                "comments_count": comments_count,
+                "created_at": iso_utc(content.CreatedAt) if content.CreatedAt else None,
+                "author": {
+                    "username": content.author.Username if getattr(content, "author", None) else None,
+                    "profile_image": (
+                        content.author.profile.ProfileImage
+                        if getattr(content, "author", None) and getattr(content.author, "profile", None)
+                        else None
+                    ),
+                },
+                "categories": [
+                    {"id": cat.CategoryID, "name": cat.Name, "slug": cat.Slug}
+                    for cat in getattr(content, "categories", [])
+                ],
+            }
+        })
+
+    return jsonify(response), 200
 
 
+@interactions_bp.post("/bookmarks")
 @interactions_bp.post("/wishlist")
 @jwt_required()
+<<<<<<< HEAD
 def add_to_wishlist():
     """Add a content item to the user's wishlist.
     ---
@@ -447,11 +481,14 @@ def add_to_wishlist():
       500:
         description: Failed to add to wishlist.
     """
+=======
+def add_to_bookmarks():
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "No input data provided"}), 400
 
-    content_id = data.get("content_id")
+    content_id = data.get("content_id") or data.get("contentId") or data.get("ContentID")
     if not content_id:
         return jsonify({"error": "content_id is required"}), 400
 
@@ -461,22 +498,24 @@ def add_to_wishlist():
 
     user_id = safe_get_user_id()
 
-    existing = Wishlist.query.filter_by(UserID=user_id, ContentID=content_id).first()
+    existing = Bookmark.query.filter_by(UserID=user_id, ContentID=content_id).first()
     if existing:
-        return jsonify({"error": "Already in wishlist."}), 409
+        return jsonify({"message": "Already bookmarked.", "id": existing.BookmarkID}), 200
 
     try:
-        wishlist = Wishlist(UserID=user_id, ContentID=content_id)
-        db.session.add(wishlist)
+        bookmark = Bookmark(UserID=user_id, ContentID=content_id)
+        db.session.add(bookmark)
         db.session.commit()
-        return jsonify({"message": "Added to wishlist.", "id": wishlist.WishlistID}), 201
+        return jsonify({"message": "Added to bookmarks.", "id": bookmark.BookmarkID}), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Failed to add to wishlist", "details": str(e)}), 500
+        return jsonify({"error": "Failed to add bookmark", "details": str(e)}), 500
 
 
-@interactions_bp.delete("/wishlist/<int:wishlist_id>")
+@interactions_bp.delete("/bookmarks/<int:bookmark_id>")
+@interactions_bp.delete("/wishlist/<int:bookmark_id>")
 @jwt_required()
+<<<<<<< HEAD
 def remove_from_wishlist(wishlist_id):
     """Remove an item from the user's wishlist.
     ---
@@ -503,21 +542,32 @@ def remove_from_wishlist(wishlist_id):
     wishlist = db.session.get(Wishlist, wishlist_id)
     if not wishlist:
         return jsonify({"error": "Wishlist item not found"}), 404
+=======
+def remove_from_bookmarks(bookmark_id):
+    user_id = safe_get_user_id()
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
 
-    if wishlist.UserID != safe_get_user_id():
+    bookmark = db.session.get(Bookmark, bookmark_id)
+    if not bookmark:
+        bookmark = Bookmark.query.filter_by(UserID=user_id, ContentID=bookmark_id).first()
+
+    if not bookmark:
+        return jsonify({"error": "Bookmark item not found"}), 404
+
+    if bookmark.UserID != user_id:
         return jsonify({"error": "Forbidden"}), 403
 
     try:
-        db.session.delete(wishlist)
+        db.session.delete(bookmark)
         db.session.commit()
-        return jsonify({"message": "Removed from wishlist."}), 200
+        return jsonify({"message": "Removed from bookmarks."}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": "Failed to remove from wishlist", "details": str(e)}), 500
+        return jsonify({"error": "Failed to remove bookmark", "details": str(e)}), 500
 
 
 # ==========================================
-# 4. NOTIFICATIONS (legacy polling endpoint)
+# 4. NOTIFICATIONS
 # ==========================================
 
 @interactions_bp.get("/notifications")
@@ -550,17 +600,14 @@ def get_notifications():
         [
             {
                 "id": n.NotificationID,
+                "type": getattr(n, "Type", "general"),
                 "message": n.Message,
                 "is_read": getattr(n, "IsRead", False),
                 "isRead": getattr(n, "IsRead", False),
                 "content_id": getattr(n, "ContentID", None),
                 "contentId": getattr(n, "ContentID", None),
-                "created_at": (
-                    iso_utc(n.CreatedAt) if getattr(n, "CreatedAt", None) else None
-                ),
-                "createdAt": (
-                    iso_utc(n.CreatedAt) if getattr(n, "CreatedAt", None) else None
-                ),
+                "created_at": iso_utc(n.CreatedAt) if getattr(n, "CreatedAt", None) else None,
+                "createdAt": iso_utc(n.CreatedAt) if getattr(n, "CreatedAt", None) else None,
             }
             for n in notifications
         ]

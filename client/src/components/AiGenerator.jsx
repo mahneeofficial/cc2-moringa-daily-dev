@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import AiAvatar from "./AiAvatar";
-import { API_BASE_URL } from "../services/api";
+import apiRequest from "../services/api";
 
 export default function AiGenerator() {
   const location = useLocation();
@@ -125,23 +125,22 @@ export default function AiGenerator() {
     try {
       const recentHistory = updatedMessages.slice(-6);
 
-      const response = await fetch(`${API_BASE_URL}/api/ai/generate`, {
+      const data = await apiRequest("/api/ai/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           prompt: messageToSend,
           history: recentHistory,
           route: location.pathname
-        }),
+        }
       });
-      const data = await response.json();
+
       setMessages((prev) => [
         ...prev,
         { sender: "ai", text: data.result || data.error || "No response received." }
       ]);
     } catch (err) {
       console.error("AI Error:", err);
-      setMessages((prev) => [...prev, { sender: "ai", text: "Error connecting to AI service." }]);
+      setMessages((prev) => [...prev, { sender: "ai", text: err.message || "Error connecting to AI service." }]);
     } finally {
       setLoading(false);
     }

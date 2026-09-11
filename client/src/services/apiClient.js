@@ -1,21 +1,28 @@
-import axios from 'axios';
+import apiRequest from "./api";
 
-const apiClient = axios.create({
-  baseURL: 'http://localhost:5001/api',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Automatically attach JWT token to headers if it exists in localStorage
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+function formatUrl(url) {
+  if (!url) return "/api";
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/api")) {
+    return url;
   }
-  return config;
-}, (error) => {
-  return Promise.reject(error);
-});
+  return `/api${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+const apiClient = {
+  get: (url, config = {}) =>
+    apiRequest(formatUrl(url), { method: "GET", ...config }),
+
+  post: (url, data, config = {}) =>
+    apiRequest(formatUrl(url), { method: "POST", body: data, ...config }),
+
+  put: (url, data, config = {}) =>
+    apiRequest(formatUrl(url), { method: "PUT", body: data, ...config }),
+
+  patch: (url, data, config = {}) =>
+    apiRequest(formatUrl(url), { method: "PATCH", body: data, ...config }),
+
+  delete: (url, config = {}) =>
+    apiRequest(formatUrl(url), { method: "DELETE", ...config }),
+};
 
 export default apiClient;

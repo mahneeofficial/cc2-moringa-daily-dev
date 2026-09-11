@@ -1,17 +1,44 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { Menu, Search, Plus, Bell, Rss } from "lucide-react";
+import { Menu, Search, Plus, Bell } from "lucide-react";
 import { selectCurrentUser } from "../features/auth/authSlice";
 import { selectUnreadCount } from "../features/notifications/notificationsSlice";
 import Avatar from "../components/ui/Avatar";
 import NavDrawer from "./NavDrawer";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+
+const formatAvatarUrl = (raw) => {
+  if (!raw) return null;
+  let path = typeof raw === "string" ? raw : (raw.profile_image || raw.profileImage || raw.url || "");
+  if (!path) return null;
+  if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("blob:")) return path;
+
+  const cleanPath = path.replace(/^\/+/, "");
+  return API_BASE_URL ? `${API_BASE_URL}/${cleanPath}` : `/${cleanPath}`;
+};
 
 export default function Topbar({ search, onSearchChange }) {
   const user = useSelector(selectCurrentUser);
   const unread = useSelector(selectUnreadCount);
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+
+  useEffect(() => {
+    const rawImg = user?.profile_image || user?.profileImage || user?.profile?.profile_image;
+    setProfileImage(formatAvatarUrl(rawImg));
+
+    const handleAvatarUpdate = (e) => {
+      if (e.detail) {
+        setProfileImage(formatAvatarUrl(e.detail));
+      }
+    };
+
+    window.addEventListener("user-avatar-updated", handleAvatarUpdate);
+    return () => window.removeEventListener("user-avatar-updated", handleAvatarUpdate);
+  }, [user]);
 
   return (
     <>
@@ -19,7 +46,7 @@ export default function Topbar({ search, onSearchChange }) {
         <div className="flex items-center gap-4 px-4 sm:px-6 py-3">
           <button
             onClick={() => setDrawerOpen(true)}
-            className="text-navy/60 hover:text-navy shrink-0"
+            className="text-navy/60 hover:text-navy shrink-0 cursor-pointer"
             aria-label="Open menu"
           >
             <Menu className="w-6 h-6" strokeWidth={1.75} />
@@ -27,11 +54,9 @@ export default function Topbar({ search, onSearchChange }) {
 
           <button
             onClick={() => navigate("/")}
-            className="flex items-center gap-2 shrink-0"
+            className="flex items-center gap-2 shrink-0 cursor-pointer"
           >
-            <span className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center">
-              <Rss className="w-4 h-4 text-white" strokeWidth={2.25} />
-            </span>
+            <img src="/logo.png" alt="MoringaHub Logo" className="w-8 h-8 object-contain rounded-lg" />
             <span className="font-display font-extrabold text-lg text-navy hidden sm:inline">
               MoringaHub
             </span>
@@ -50,7 +75,7 @@ export default function Topbar({ search, onSearchChange }) {
 
           <button
             onClick={() => navigate("/create")}
-            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition shrink-0"
+            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-full bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold transition shrink-0 cursor-pointer"
             aria-label="Create a post"
             title="Create a post"
           >
@@ -59,7 +84,7 @@ export default function Topbar({ search, onSearchChange }) {
 
           <button
             onClick={() => navigate("/notifications")}
-            className="relative text-navy/60 hover:text-navy shrink-0"
+            className="relative text-navy/60 hover:text-navy shrink-0 cursor-pointer"
             aria-label="Notifications"
           >
             <Bell className="w-5 h-5" strokeWidth={1.75} />
@@ -68,8 +93,13 @@ export default function Topbar({ search, onSearchChange }) {
             )}
           </button>
 
-          <button onClick={() => navigate("/profile")} className="shrink-0">
-            <Avatar username={user?.username} role={user?.role} />
+          <button onClick={() => navigate("/profile")} className="shrink-0 cursor-pointer">
+            <Avatar 
+              src={profileImage} 
+              profileImage={profileImage} 
+              username={user?.username} 
+              role={user?.role} 
+            />
           </button>
         </div>
       </header>
@@ -78,4 +108,3 @@ export default function Topbar({ search, onSearchChange }) {
     </>
   );
 }
-

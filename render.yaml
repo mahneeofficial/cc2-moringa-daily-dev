@@ -59,6 +59,22 @@ services:
       # - key: GEMINI_API_KEY
       #   sync: false
 
+      # REAL password-reset emails (Gmail app password — see
+      # backend/.env.example for the 1-minute setup):
+      - key: MAIL_SERVER
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USE_TLS
+        value: "true"
+      - key: MAIL_USERNAME
+        sync: false                     # your Gmail address (set in dashboard)
+      - key: MAIL_PASSWORD
+        sync: false                     # the 16-char app password (secret)
+      # Emailed reset links must point at the deployed frontend:
+      - key: FRONTEND_URL
+        sync: false                     # e.g. https://moringa-client.onrender.com
+
     # Uncomment on a paid plan to keep uploaded media across deploys:
     # disk:
     #   name: uploads

@@ -1,10 +1,9 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
-from app.utils import iso_utc
-
 from app.extensions import db
 from app.models import Comment, Content, User
+from app.utils import iso_utc
 
 comments_bp = Blueprint("comments", __name__)
 
@@ -15,7 +14,11 @@ def safe_get_user_id():
     if not identity:
         return None
     if isinstance(identity, dict):
-        return int(identity.get("id"))
+        return int(
+            identity.get("id")
+            or identity.get("user_id")
+            or identity.get("UserID")
+        )
     return int(identity)
 
 
@@ -57,6 +60,7 @@ def _build_comment_tree(comment):
         "body": comment.Text,
         "text": comment.Text,
         "created_at": created_at_iso or created_at_fmt,
+        "createdAt": created_at_iso or created_at_fmt,
         "created_at_formatted": created_at_fmt,
         "user": author_info,
         "author": author_info,
@@ -286,6 +290,9 @@ def add_comment(content_id):
         db.session.commit()
 
         author_info = _serialize_author(new_comment.author)
+        created_at_iso = (
+            iso_utc(new_comment.CreatedAt) if new_comment.CreatedAt else None
+        )
         created_at_fmt = (
             new_comment.CreatedAt.strftime("%d %b %Y %H:%M")
             if new_comment.CreatedAt
@@ -302,7 +309,9 @@ def add_comment(content_id):
                     "text": new_comment.Text,
                     "parent_id": new_comment.ParentCommentID,
                     "parent_comment_id": new_comment.ParentCommentID,
-                    "created_at": created_at_fmt,
+                    "created_at": created_at_iso or created_at_fmt,
+                    "createdAt": created_at_iso or created_at_fmt,
+                    "created_at_formatted": created_at_fmt,
                     "user": author_info,
                     "author": author_info,
                     "message": "Comment added successfully.",
@@ -523,7 +532,10 @@ def delete_comment(comment_id):
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid user identity"}), 400
 
-    if comment.UserID != user_id:
+    current_user = db.session.get(User, user_id)
+    is_admin = bool(current_user and str(getattr(current_user, "Role", "")).lower() == "admin")
+
+    if comment.UserID != user_id and not is_admin:
         return jsonify({"error": "You can only delete your own comments."}), 403
 
     try:

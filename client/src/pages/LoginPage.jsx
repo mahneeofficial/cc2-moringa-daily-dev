@@ -7,7 +7,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [adminBlocked, setAdminBlocked] = useState(false);
   const sessionExpired =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('session') === 'expired';
@@ -17,7 +16,6 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
-    setAdminBlocked(false);
 
     if (!username.trim() || !password) {
       setErrorMsg('Please enter both username and password.');
@@ -27,26 +25,27 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       const data = await loginUser({ username, password });
-      localStorage.setItem('token', data.token);
-      // Once the backend returns user info on login (id, username, role),
-      // this stores it so the rest of the app knows who's logged in.
-      // Safe to keep even before that exists — data.user will just be
-      // undefined and this becomes a no-op until then.
+      
+      // Fallback check to ensure token is captured regardless of key name
+      const token = data.token || data.access_token;
+      if (token) {
+        localStorage.setItem('token', token);
+        localStorage.setItem('access_token', token);
+      }
+
       if (data.user) {
         localStorage.setItem('user', JSON.stringify(data.user));
       }
-      // Return the user to where they were (e.g. after a session-expiry
-      // redirect) instead of always dumping them on the home feed.
+
       const next = new URLSearchParams(window.location.search).get('next');
-      navigate(next && next.startsWith('/') ? next : '/');
-    } catch (err) {
-      const message = err.message || 'Invalid Username or Password.';
-      setErrorMsg(message);
-      // Admin accounts are rejected on the public form — point them to
-      // the dedicated admin login instead of a dead end.
-      if (err.message && err.message.toLowerCase().includes('admin')) {
-        setAdminBlocked(true);
+      if (next && next.startsWith('/')) {
+        navigate(next);
+      } else {
+        const userRole = String(data.user?.role || '').toLowerCase();
+        navigate(userRole === 'admin' ? '/admin' : '/');
       }
+    } catch (err) {
+      setErrorMsg(err.message || 'Invalid Username or Password.');
     } finally {
       setIsLoading(false);
     }
@@ -67,16 +66,6 @@ export default function LoginPage() {
         <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs text-center">
           Your session expired — please log in again.
         </div>
-      )}
-
-      {adminBlocked && (
-        <Link
-          to="/admin/login"
-          className="mt-3 flex items-center justify-center gap-2 p-3 rounded-lg bg-navy-raised border border-navy-border text-cream text-xs font-semibold hover:border-brand-500/60 transition"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-          Continue on the secure admin login
-        </Link>
       )}
 
       <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
@@ -136,13 +125,6 @@ export default function LoginPage() {
         Don't have an account?{' '}
         <Link to="/signup" className="text-brand-500 font-semibold hover:underline">
           Sign up
-        </Link>
-      </p>
-
-      <p className="text-[11px] text-center text-muted/70 mt-3">
-        Admin?{' '}
-        <Link to="/admin/login" className="text-navy/60 hover:text-navy font-medium underline underline-offset-2">
-          Sign in on the admin portal
         </Link>
       </p>
     </div>

@@ -1,76 +1,118 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5001"
+).replace(/\/$/, "");
 
-// Shared so every component (AI widgets etc.) talks to the same backend —
-// deploy only needs VITE_API_BASE_URL set at build time.
 export { API_BASE_URL };
 
-// ---------------------------------------------------------------------------
-// Global auth-session handling
-// ---------------------------------------------------------------------------
-// A stale/expired token used to surface as random 401s from reactions,
-// subscriptions, etc. Now the FIRST 401 clears the dead session and sends
-// the user to the login page once, instead of failing silently everywhere.
 let handling401 = false;
 
 function handleSessionExpired() {
   if (handling401) return;
   handling401 = true;
+
   localStorage.removeItem("token");
+  localStorage.removeItem("access_token");
+  localStorage.removeItem("jwt");
+  localStorage.removeItem("accessToken");
   localStorage.removeItem("user");
-  // Preserve where they were so login can bring them back.
+
   if (typeof window !== "undefined") {
     const current = window.location?.pathname || "/";
-    const safeCurrent = current === "/login" ? "/" : current;
-    window.location.assign(`/login?session=expired&next=${encodeURIComponent(safeCurrent)}`);
+    const currentSearch = window.location?.search || "";
+    const fullPath = current + currentSearch;
+    const safeCurrent = current.startsWith("/login") ? "/" : fullPath;
+
+    window.location.assign(
+      `/login?session=expired&next=${encodeURIComponent(safeCurrent)}`
+    );
   }
 }
 
 export async function apiRequest(endpoint, options = {}, { retried = false } = {}) {
-  const token = localStorage.getItem("token");
+  const token =
+    localStorage.getItem("token") ||
+    localStorage.getItem("access_token") ||
+    localStorage.getItem("jwt") ||
+    localStorage.getItem("accessToken");
+
+  // Build target URL (handles relative endpoints, absolute URLs, and empty base URLs safely)
+  let url;
+  if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
+    url = new URL(endpoint);
+  } else {
+    const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    const base = API_BASE_URL || (typeof window !== "undefined" ? window.location.origin : "http://localhost:5001");
+    url = new URL(path, base);
+  }
+
+  // Append query parameters if passed in options.params
+  if (options.params && typeof options.params === "object") {
+    Object.entries(options.params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        url.searchParams.append(key, String(value));
+      }
+    });
+  }
 
   const isFormData =
     typeof FormData !== "undefined" && options.body instanceof FormData;
 
-  // Never set Content-Type for FormData — the browser must add the boundary.
+  const customHeaders = { ...(options.headers || {}) };
+  if (isFormData) {
+    delete customHeaders["Content-Type"];
+    delete customHeaders["content-type"];
+  }
+
   const headers = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...(options.headers || {}),
+    ...customHeaders,
   };
 
-  if (token) {
+  if (token && !headers.Authorization && !headers.authorization) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  // Automatically stringify object bodies if not FormData, Blob, or URLSearchParams
+  let body = options.body;
+  if (
+    body &&
+    typeof body === "object" &&
+    !isFormData &&
+    !(body instanceof URLSearchParams) &&
+    !(body instanceof Blob)
+  ) {
+    body = JSON.stringify(body);
+  }
+
+  const response = await fetch(url.toString(), {
     ...options,
     headers,
+    body,
   });
 
-  let data = null;
+  if (response.status === 204) {
+    return null;
+  }
 
+  let data;
   try {
     data = await response.json();
   } catch {
     data = null;
   }
 
-  // Stale/expired token → clear session and redirect to login once.
-  // (But never for the login endpoints themselves — a wrong password there
-  // is a legit 401 the form needs to show.)
-  if (
-    response.status === 401 &&
-    token &&
-    !endpoint.includes("/auth/login") &&
-    !retried
-  ) {
+  const isAuthRoute =
+    endpoint.includes("/login") ||
+    endpoint.includes("/register") ||
+    endpoint.includes("/auth/");
+
+  // Redirect to login on 401 for any protected route
+  if (response.status === 401 && !isAuthRoute && !retried) {
     handleSessionExpired();
     throw new Error("Your session has expired. Redirecting to login…");
   }
 
-  // The backend repairs DB schema drift automatically and answers 503 with
-  // retry: true — replay the request once so the user never sees the error.
-  // (Safe for POSTs too: the 503 means the request never completed.)
+  // Schema auto-repair retry logic
   if (
     response.status === 503 &&
     data?.schema_repaired &&
@@ -81,13 +123,13 @@ export async function apiRequest(endpoint, options = {}, { retried = false } = {
   }
 
   if (!response.ok) {
-    // Include the backend's `details` when present so schema/config errors
-    // are visible in the UI instead of a generic message.
-    const base =
-      data?.error ||
-      data?.message ||
-      `Request failed with status ${response.status}`;
-    const detail = data?.details ? ` (${data.details})` : "";
+    let base = data?.error || data?.message || `Request failed with status ${response.status}`;
+    if (typeof base === "object") {
+      base = JSON.stringify(base);
+    }
+    const detail = data?.details
+      ? ` (${typeof data.details === "object" ? JSON.stringify(data.details) : data.details})`
+      : "";
     throw new Error(base + detail);
   }
 

@@ -1,13 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Camera } from 'lucide-react';
+import apiClient from '../services/apiClient';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export default function ProfileAvatarUpload({ user, onAvatarUpdated }) {
-  const [preview, setPreview] = useState(
-    user?.profile_image ? `${API_BASE_URL}${user.profile_image}` : null
-  );
+  const getFullAvatarUrl = (img) => {
+    if (!img) return null;
+    if (typeof img !== 'string') return null;
+    if (img.startsWith('http://') || img.startsWith('https://') || img.startsWith('blob:')) {
+      return img;
+    }
+    const cleanPath = img.replace(/^\/+/, '');
+    return API_BASE_URL ? `${API_BASE_URL}/${cleanPath}` : `/${cleanPath}`;
+  };
+
+  const [preview, setPreview] = useState(getFullAvatarUrl(user?.profile_image));
   const [uploading, setUploading] = useState(false);
+
+  // Synchronize preview if user prop updates externally
+  useEffect(() => {
+    if (user?.profile_image) {
+      setPreview(getFullAvatarUrl(user.profile_image));
+    }
+  }, [user]);
 
   const handleFileSelect = async (e) => {
     const file = e.target.files[0];
@@ -15,35 +31,40 @@ export default function ProfileAvatarUpload({ user, onAvatarUpdated }) {
 
     setPreview(URL.createObjectURL(file));
 
-    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
-    if (!token) {
-      alert('Your session expired. Please log in again.');
-      return;
-    }
-
     const formData = new FormData();
-    formData.append('profile_picture', file);
+    formData.append('file', file);
 
     setUploading(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/profiles/avatar`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData,
-      });
+      const data = await apiClient.put('/profiles/me', formData);
 
-      const data = await response.json();
+      const newAvatar = data?.profile_image || data?.profile?.profile_image || data?.avatar_url;
+      const fullUrl = getFullAvatarUrl(newAvatar);
+      setPreview(fullUrl);
 
-      if (response.ok) {
-        if (onAvatarUpdated) onAvatarUpdated(data.profile_image);
-      } else {
-        alert(data.error || 'Failed to update profile picture');
+      // Persist to localStorage so the avatar remains after browser refresh
+      try {
+        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const updatedUser = {
+          ...storedUser,
+          profile_image: newAvatar,
+          profileImage: newAvatar,
+          avatar_url: newAvatar,
+        };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      } catch (err) {
+        console.error('Error updating local storage user:', err);
       }
+
+      // Broadcast change so Navbar and Topbar update dynamically
+      window.dispatchEvent(new CustomEvent('user-avatar-updated', { detail: fullUrl }));
+
+      if (onAvatarUpdated) onAvatarUpdated(newAvatar);
     } catch (err) {
       console.error('Upload failed:', err);
+      const errorMessage = err?.message || 'Failed to update profile picture';
+      alert(errorMessage);
     } finally {
       setUploading(false);
     }
@@ -51,20 +72,20 @@ export default function ProfileAvatarUpload({ user, onAvatarUpdated }) {
 
   return (
     <div className="flex items-center gap-4">
-      <div className="relative w-20 h-20 rounded-full overflow-hidden bg-slate-800 border-2 border-slate-700 flex items-center justify-center group">
+      <div className="relative w-20 h-20 rounded-full overflow-hidden bg-slate-100 border-2 border-slate-200 flex items-center justify-center group shadow-sm">
         {preview ? (
           <img src={preview} alt="Profile Avatar" className="w-full h-full object-cover" />
         ) : (
-          <span className="text-2xl font-bold text-slate-300">
+          <span className="text-2xl font-bold text-slate-600">
             {user?.username?.charAt(0).toUpperCase() || 'U'}
           </span>
         )}
 
-        <label className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition">
-          <Camera className="w-6 h-6 text-emerald-400" />
+        <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition">
+          <Camera className="w-6 h-6 text-white" />
           <input 
             type="file" 
-            accept="image/png, image/jpeg, image/webp" 
+            accept="image/*" 
             onChange={handleFileSelect} 
             className="hidden" 
           />
@@ -72,16 +93,15 @@ export default function ProfileAvatarUpload({ user, onAvatarUpdated }) {
       </div>
 
       <div>
-        <label className="cursor-pointer bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-xl transition inline-block">
+        <label className="cursor-pointer bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition inline-block shadow-sm">
           {uploading ? 'Uploading...' : 'Change Avatar'}
           <input 
             type="file" 
-            accept="image/png, image/jpeg, image/webp" 
+            accept="image/*" 
             onChange={handleFileSelect} 
             className="hidden" 
           />
         </label>
-        <p className="text-[11px] text-slate-500 mt-1">PNG, JPG or WEBP up to 5MB</p>
       </div>
     </div>
   );

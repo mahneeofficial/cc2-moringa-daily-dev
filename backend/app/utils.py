@@ -5,6 +5,20 @@ from app.extensions import db
 from app.models import User
 
 
+def safe_get_user_id():
+    """Extract integer user ID safely from JWT identity dict or scalar."""
+    identity = get_jwt_identity()
+    if not identity:
+        return None
+    if isinstance(identity, dict):
+        return int(
+            identity.get("id")
+            or identity.get("user_id")
+            or identity.get("UserID")
+        )
+    return int(identity)
+
+
 def role_required(*roles):
     """Decorator to enforce role-based access control with casing-insensitive matching."""
     def decorator(fn):

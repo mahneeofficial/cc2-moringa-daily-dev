@@ -1,16 +1,28 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from app.extensions import db
-from app.models import Category
+from app.models import Category, Subscription
 from app.utils import role_required
 
 categories_bp = Blueprint("categories", __name__)
 
 
 def safe_get_user_id():
-    """Safely extract integer user ID from JWT identity."""
-    identity = get_jwt_identity()
-    if not identity:
+    """Safely extract integer user ID from JWT identity across all common JWT structures."""
+    try:
+        identity = get_jwt_identity()
+        if identity is None:
+            return None
+        if isinstance(identity, dict):
+            val = (
+                identity.get("id")
+                or identity.get("user_id")
+                or identity.get("UserID")
+                or identity.get("sub")
+            )
+            return int(val) if val is not None else None
+        return int(identity)
+    except (ValueError, TypeError):
         return None
     if isinstance(identity, dict):
         val = identity.get("id") or identity.get("UserID") or identity.get("user_id")
@@ -23,8 +35,20 @@ def safe_get_user_id():
 # -------------------------------------------------------------------
 @categories_bp.route("", methods=["GET"], strict_slashes=False)
 @categories_bp.route("/", methods=["GET"], strict_slashes=False)
+@jwt_required(optional=True)
 def list_categories():
     try:
+        user_id = safe_get_user_id()
+        subscribed_category_ids = set()
+
+        if user_id:
+            user_subs = Subscription.query.filter_by(UserID=user_id).all()
+            subscribed_category_ids = {
+                sub.CategoryID
+                for sub in user_subs
+                if getattr(sub, "CategoryID", None)
+            }
+
         categories = Category.query.order_by(Category.Name.asc()).all()
         return jsonify([
             {
@@ -36,13 +60,18 @@ def list_categories():
             for cat in categories
         ]), 200
     except Exception as e:
-        return jsonify({"error": "Failed to fetch categories", "details": str(e)}), 500
+        db.session.rollback()
+        return jsonify(
+            {"error": "Failed to unsubscribe", "details": str(e)}
+        ), 500
 
 
 # -------------------------------------------------------------------
-# 2. GET SINGLE CATEGORY
+# 3. GET SINGLE CATEGORY
 # -------------------------------------------------------------------
-@categories_bp.route("/<int:category_id>", methods=["GET"], strict_slashes=False)
+@categories_bp.route(
+    "/<int:category_id>", methods=["GET"], strict_slashes=False
+)
 def get_category(category_id):
     category = db.session.get(Category, category_id)
     if not category:
@@ -71,7 +100,6 @@ def create_category():
     if not name or not str(name).strip():
         return jsonify({"error": "Category name is required."}), 400
 
-    # Case-insensitive duplicate check
     existing_category = Category.query.filter(
         Category.Name.ilike(str(name).strip())
     ).first()

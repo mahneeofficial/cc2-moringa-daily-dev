@@ -1,17 +1,14 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
 export default function ProtectedRoute() {
-  const token = localStorage.getItem('token');
+  const location = useLocation();
+  const token = localStorage.getItem('token') || localStorage.getItem('access_token');
 
-  // Dev-only bypass: without this, the "Preview as" role switcher (which
-  // lives inside the pages this route protects) is unreachable whenever
-  // there's no real backend to log in against — a chicken-and-egg problem.
-  // import.meta.env.DEV is false in a production build, so this never
-  // weakens real auth once deployed.
+  // Dev-only bypass: keeps preview functionality accessible when backend is offline
   const devPreviewAllowed = import.meta.env.DEV;
 
   if (!token && !devPreviewAllowed) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
   return <Outlet />;

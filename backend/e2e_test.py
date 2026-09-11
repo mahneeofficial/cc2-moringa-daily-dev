@@ -89,6 +89,43 @@ check("admin login rejects non-admin (403)", r.status_code == 403, r.get_json())
 r = client.post("/api/auth/login", json={"username": "writer", "password": "Passw0rd!"})
 check("tech_writer can still use public login", r.status_code == 200, r.get_json())
 
+print("\n== 1c. AUTH PATH ALIASES (logout / forgot-password / reset-password / avatar) ==")
+# Regression: the frontend calls /api/auth/forgot-password etc., but only the
+# short /api/forgot-password forms existed -> 404 -> the browser showed a
+# misleading CORS error on the preflight.
+r = client.options("/api/auth/forgot-password", headers={
+    "Origin": "http://localhost:5173",
+    "Access-Control-Request-Method": "POST",
+})
+check("OPTIONS /api/auth/forgot-password preflight 200", r.status_code == 200, r.status_code)
+check("preflight has ACAO header",
+      r.headers.get("Access-Control-Allow-Origin") is not None, dict(r.headers))
+
+r = client.post("/api/auth/forgot-password", json={})
+check("forgot-password without email 400", r.status_code == 400, r.get_json())
+r = client.post("/api/auth/forgot-password", json={"email": "ghost@nowhere.dev"})
+check("forgot-password unknown email -> generic 200",
+      r.status_code == 200 and "instructions" in r.get_json().get("message", ""), r.get_json())
+r = client.post("/api/auth/forgot-password", json={"email": "ann@moringa.com"})
+check("forgot-password existing email 200 (dev link when SMTP unconfigured)",
+      r.status_code == 200, r.get_json())
+
+r = client.post("/api/auth/forgot-password", json={"email": "ann@moringa.com"})
+check("reset cooldown: immediate 2nd request -> generic 200, no dev link, no email sent",
+      r.status_code == 200 and not r.get_json().get("dev_reset_url"), r.get_json())
+
+r = client.post("/api/auth/logout")
+check("logout via /auth alias 200", r.status_code == 200, r.get_json())
+r = client.post("/api/auth/reset-password", json={"token": "bogus", "password": "NewPass123!"})
+check("reset-password via /auth alias rejects bad token",
+      r.status_code == 400, r.get_json())
+
+r = client.options("/api/auth/avatar", headers={
+    "Origin": "http://localhost:5173",
+    "Access-Control-Request-Method": "PATCH",
+})
+check("OPTIONS /api/auth/avatar preflight 200", r.status_code == 200, r.status_code)
+
 print("\n== 2. PROFILE: save skills + github, then reload ==")
 r = client.put("/api/profiles/me", headers=as_user(ANN_TOKEN), json={
     "bio": "Moringa student", "skills": "React, Python, Tailwind",
@@ -156,6 +193,55 @@ r = client.post(f"/api/content/{ANN_POST_ID}/reactions",
                 headers=as_user(WRITER_TOKEN), json={"type": "dislike"})
 data = r.get_json()
 check("dislike recorded", data.get("dislikes") == 1, data)
+
+print("\n== 4b. COMMENTS + DELETE OWN POST ==")
+# Regression: the frontend used to call addComment(id, user.id, text),
+# sending user.id as the body and the TEXT as parent_comment_id — every
+# top-level comment 404'd with "Parent comment not found".
+r = client.post(f"/api/content/{ANN_POST_ID}/comments",
+                headers=as_user(ANN_TOKEN), json={"text": "First! Great post 🎉"})
+check("top-level comment 201", r.status_code == 201, r.get_json())
+comment_id = r.get_json().get("id") or r.get_json().get("comment_id")
+check("comment response has id", bool(comment_id), r.get_json())
+check("comment createdAt is UTC Z-suffixed",
+      str(r.get_json().get("createdAt", "")).endswith("Z"), r.get_json())
+
+r = client.post(f"/api/content/{ANN_POST_ID}/comments",
+                headers=as_user(ADMIN_TOKEN),
+                json={"text": "Thanks — approved!", "parent_comment_id": comment_id})
+check("reply 201", r.status_code == 201, r.get_json())
+check("reply linked to parent", r.get_json().get("parent_comment_id") == comment_id, r.get_json())
+
+r = client.get(f"/api/content/{ANN_POST_ID}/comments")
+tree = r.get_json()
+check("comment tree lists top-level", any(c["id"] == comment_id for c in tree), tree)
+check("reply nested under parent",
+      any(r_["text"] == "Thanks — approved!" for c in tree for r_ in c.get("replies", [])), tree)
+
+r = client.post(f"/api/content/{ANN_POST_ID}/comments",
+                headers=as_user(ANN_TOKEN),
+                json={"text": "orphan", "parent_comment_id": 999999})
+check("bogus parent 404 'Parent comment not found'",
+      r.status_code == 404 and "Parent comment" in r.get_json().get("error", ""), r.get_json())
+
+r = client.post(f"/api/content/{ANN_POST_ID}/comments", json={"text": "anon"})
+check("comment without token 401", r.status_code == 401, r.status_code)
+
+# --- delete own post: author can, other users can't, admin can ---
+r = client.post("/api/content", headers=as_user(ANN_TOKEN), json={
+    "title": "Delete me please", "description": "temporary post",
+    "type": "article", "category_id": CAT_ID})
+check("create temp post for delete test", r.status_code == 201, r.get_json())
+del_id = r.get_json().get("content_id") or r.get_json().get("id")
+
+r = client.delete(f"/api/content/{del_id}", headers=as_user(WRITER_TOKEN))
+check("another user CANNOT delete someone else's post (403)",
+      r.status_code == 403, r.get_json())
+r = client.delete(f"/api/content/{del_id}", headers=as_user(ANN_TOKEN))
+check("author CAN delete own post (200)",
+      r.status_code == 200, r.get_json())
+r = client.get(f"/api/content/{del_id}")
+check("deleted post is gone (404)", r.status_code == 404, r.status_code)
 
 print("\n== 5. NOTIFICATIONS: like + publish triggers ==")
 r = client.get("/api/users/me/notifications", headers=as_user(ANN_TOKEN))

@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
+from werkzeug.security import generate_password_hash
 
 from app.extensions import db
 from app.models import Content, Notification, Profile, User
@@ -100,7 +101,6 @@ def delete_content(content_id):
     if not content:
         return jsonify({"error": "Content not found."}), 404
 
-    # Remove associated notifications first to prevent foreign key constraint issues
     Notification.query.filter_by(ContentID=content_id).delete()
 
     db.session.delete(content)
@@ -116,23 +116,36 @@ def delete_content(content_id):
 @jwt_required()
 @role_required("Admin", "admin")
 def list_all_users():
-    users = User.query.all()
-    return (
-        jsonify([
+    users = User.query.order_by(User.UserID.desc()).all()
+
+    users_data = []
+    for user in users:
+        profile_img = (
+            getattr(user.profile, "ProfileImage", None)
+            if getattr(user, "profile", None)
+            else None
+        )
+        bio = (
+            getattr(user.profile, "Bio", "")
+            if getattr(user, "profile", None)
+            else ""
+        )
+        content_count = Content.query.filter_by(UserID=user.UserID).count()
+
+        users_data.append(
             {
                 "id": user.UserID,
+                "user_id": user.UserID,
                 "username": user.Username,
                 "email": user.Email,
                 "role": user.Role,
                 "is_active": getattr(user, "IsActive", True),
             }
-            for user in users
-        ]),
-        200,
-    )
+        )
+
+    return jsonify(users_data), 200
 
 
-# Endpoint: POST /api/admin/users
 @admin_bp.post("/users")
 @jwt_required()
 @role_required("Admin", "admin")
@@ -144,7 +157,10 @@ def admin_add_user():
     role = data.get("role", "User")
 
     if not username or not email or not password:
-        return jsonify({"error": "Username, email, and password are required."}), 400
+        return (
+            jsonify({"error": "Username, email, and password are required."}),
+            400,
+        )
 
     existing = User.query.filter(
         (User.Username == username) | (User.Email == email)
@@ -161,11 +177,10 @@ def admin_add_user():
     if hasattr(new_user, "IsActive"):
         new_user.IsActive = True
 
-    # Securely hash password
     if hasattr(new_user, "set_password"):
         new_user.set_password(password)
     else:
-        new_user.password_hash = password
+        new_user.PasswordHash = generate_password_hash(password)
 
     db.session.add(new_user)
     db.session.flush()
@@ -174,12 +189,18 @@ def admin_add_user():
     db.session.commit()
 
     return (
-        jsonify({"message": "User added successfully.", "user_id": new_user.UserID}),
+        jsonify(
+            {
+                "message": "User added successfully.",
+                "user_id": new_user.UserID,
+                "username": new_user.Username,
+                "role": new_user.Role,
+            }
+        ),
         201,
     )
 
 
-# Endpoint: PATCH /api/admin/users/<int:user_id>/status
 @admin_bp.patch("/users/<int:user_id>/status")
 @jwt_required()
 @role_required("Admin", "admin")
@@ -193,4 +214,12 @@ def toggle_user_status(user_id):
     db.session.commit()
 
     status_str = "activated" if user.IsActive else "deactivated"
-    return jsonify({"message": f"User '{user.Username}' has been {status_str}."}), 200
+    return (
+        jsonify(
+            {
+                "message": f"User '{user.Username}' has been {status_str}.",
+                "is_active": user.IsActive,
+            }
+        ),
+        200,
+    )

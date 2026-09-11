@@ -2,7 +2,6 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app.utils import iso_utc
-
 from app.extensions import db
 from app.models import Category, Subscription
 
@@ -10,11 +9,22 @@ subscriptions_bp = Blueprint("subscriptions", __name__)
 
 
 def safe_get_user_id():
-    """Extract integer user ID safely from JWT identity."""
-    identity = get_jwt_identity()
-    if isinstance(identity, dict):
-        return int(identity.get("id"))
-    return int(identity)
+    """Extract integer user ID safely from JWT identity across all common JWT structures."""
+    try:
+        identity = get_jwt_identity()
+        if identity is None:
+            return None
+        if isinstance(identity, dict):
+            val = (
+                identity.get("id")
+                or identity.get("user_id")
+                or identity.get("UserID")
+                or identity.get("sub")
+            )
+            return int(val) if val is not None else None
+        return int(identity)
+    except (ValueError, TypeError):
+        return None
 
 
 # ------------------ SUBSCRIBE TO CATEGORY ------------------ #
@@ -23,6 +33,7 @@ def safe_get_user_id():
 @subscriptions_bp.post("")
 @jwt_required()
 def subscribe_to_category():
+<<<<<<< HEAD
     """Subscribe to a specific category.
     ---
     tags:
@@ -57,6 +68,10 @@ def subscribe_to_category():
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
+=======
+    user_id = safe_get_user_id()
+    if not user_id:
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
         return jsonify({"error": "Invalid user identity"}), 400
 
     data = request.get_json(silent=True) or {}
@@ -102,6 +117,7 @@ def subscribe_to_category():
 @subscriptions_bp.get("")
 @jwt_required()
 def get_my_subscriptions():
+<<<<<<< HEAD
     """Get all subscriptions for the authenticated user.
     ---
     tags:
@@ -119,6 +135,10 @@ def get_my_subscriptions():
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
+=======
+    user_id = safe_get_user_id()
+    if not user_id:
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
         return jsonify({"error": "Invalid user identity"}), 400
 
     subscriptions = Subscription.query.filter_by(UserID=user_id).all()
@@ -147,6 +167,7 @@ def get_my_subscriptions():
 @subscriptions_bp.delete("/<int:category_id>")
 @jwt_required()
 def unsubscribe_from_category(category_id):
+<<<<<<< HEAD
     """Unsubscribe from a specific category.
     ---
     tags:
@@ -172,6 +193,10 @@ def unsubscribe_from_category(category_id):
     try:
         user_id = safe_get_user_id()
     except (ValueError, TypeError):
+=======
+    user_id = safe_get_user_id()
+    if not user_id:
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
         return jsonify({"error": "Invalid user identity"}), 400
 
     subscription = Subscription.query.filter_by(

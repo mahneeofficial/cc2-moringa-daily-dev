@@ -13,7 +13,11 @@ def safe_get_user_id():
     if not identity:
         return None
     if isinstance(identity, dict):
-        return int(identity.get("id"))
+        return int(
+            identity.get("id")
+            or identity.get("user_id")
+            or identity.get("UserID")
+        )
     return int(identity)
 
 
@@ -88,12 +92,23 @@ def get_comment_reactions(comment_id):
         pass
 
     return (
+<<<<<<< HEAD
         jsonify({
             "comment_id": comment_id,
             "likes_count": counts["likes"],
             "dislikes_count": counts["dislikes"],
             "user_reaction": user_reaction,
         }),
+=======
+        jsonify(
+            {
+                "comment_id": comment_id,
+                "likes_count": counts["likes"],
+                "dislikes_count": counts["dislikes"],
+                "user_reaction": user_reaction,
+            }
+        ),
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
         200,
     )
 
@@ -194,12 +209,23 @@ def react_to_comment(comment_id):
                 db.session.commit()
                 counts = _get_reaction_counts(comment_id)
                 return (
+<<<<<<< HEAD
                     jsonify({
                         "message": "Reaction removed",
                         "user_reaction": None,
                         "likes_count": counts["likes"],
                         "dislikes_count": counts["dislikes"],
                     }),
+=======
+                    jsonify(
+                        {
+                            "message": "Reaction removed",
+                            "user_reaction": None,
+                            "likes_count": counts["likes"],
+                            "dislikes_count": counts["dislikes"],
+                        }
+                    ),
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
                     200,
                 )
 
@@ -214,12 +240,23 @@ def react_to_comment(comment_id):
         counts = _get_reaction_counts(comment_id)
 
         return (
+<<<<<<< HEAD
             jsonify({
                 "message": "Comment reaction recorded",
                 "user_reaction": reaction_type,
                 "likes_count": counts["likes"],
                 "dislikes_count": counts["dislikes"],
             }),
+=======
+            jsonify(
+                {
+                    "message": "Comment reaction recorded",
+                    "user_reaction": reaction_type,
+                    "likes_count": counts["likes"],
+                    "dislikes_count": counts["dislikes"],
+                }
+            ),
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
             200,
         )
 
@@ -299,12 +336,23 @@ def remove_comment_reaction(comment_id):
         counts = _get_reaction_counts(comment_id)
 
         return (
+<<<<<<< HEAD
             jsonify({
                 "message": "Comment reaction removed",
                 "user_reaction": None,
                 "likes_count": counts["likes"],
                 "dislikes_count": counts["dislikes"],
             }),
+=======
+            jsonify(
+                {
+                    "message": "Comment reaction removed",
+                    "user_reaction": None,
+                    "likes_count": counts["likes"],
+                    "dislikes_count": counts["dislikes"],
+                }
+            ),
+>>>>>>> b967a37c7ac44c464ee1430f46bf1c288dbedd03
             200,
         )
 

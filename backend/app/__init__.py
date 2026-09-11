@@ -78,8 +78,11 @@ def create_app(config_name=None):
     from app.routes.comment_reactions import comment_reactions_bp
     from app.routes.comments import comments_bp
     from app.routes.content import content_bp
+    from app.routes.content import content_bp
     from app.routes.interactions import interactions_bp
+    from app.routes.media import media_bp  # Registered media upload blueprint
     from app.routes.notifications import notifications_bp
+    from app.routes.profile import profiles_bp
     from app.routes.reports import reports_bp
     from app.routes.subscriptions import subscriptions_bp
 

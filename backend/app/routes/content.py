@@ -38,6 +38,19 @@ def safe_get_user_id():
     return int(identity)
 
 
+def _delete_local_file(content_url):
+    """Helper to remove static upload file from disk if it exists."""
+    if content_url and content_url.startswith("/static/uploads/"):
+        filename = os.path.basename(content_url)
+        upload_dir = current_app.config.get("UPLOAD_FOLDER", "static/uploads")
+        file_path = os.path.join(upload_dir, filename)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                current_app.logger.warning(f"Failed to delete old file {file_path}: {e}")
+
+
 def _notify_subscribers(content_item):
     """Send notifications to users subscribed to this content's categories."""
     notifications = []
@@ -107,10 +120,17 @@ def list_content():
     status = request.args.get("status", "Published")
     content_type = request.args.get("type")
 
-    query = Content.query
+    query = Content.query.options(
+        joinedload(Content.author).joinedload(User.profile),
+        selectinload(Content.categories),
+        selectinload(Content.comments),
+        selectinload(Content.reactions),
+    )
 
-    # 1. Filter Category
     if category_id:
+        query = query.filter(
+            Content.categories.any(Category.CategoryID == category_id)
+        )
         query = query.filter(
             Content.categories.any(Category.CategoryID == category_id)
         )
@@ -345,6 +365,7 @@ def create_content():
                     new_content.categories.append(category)
             except (ValueError, TypeError):
                 return jsonify({"error": "Invalid Category ID format"}), 400
+                return jsonify({"error": "Invalid Category ID format"}), 400
 
         db.session.add(new_content)
         db.session.commit()
@@ -378,6 +399,7 @@ def create_content():
 
 
 # -------------------------------------------------------------------
+# 4. EDIT CONTENT (PUT/PATCH)
 # 4. EDIT CONTENT (PUT/PATCH)
 # -------------------------------------------------------------------
 def _handle_edit_content(content_id):
@@ -433,10 +455,16 @@ def _handle_edit_content(content_id):
         )
         os.makedirs(upload_dir, exist_ok=True)
         save_path = os.path.join(upload_dir, filename)
+
+        _delete_local_file(item.ContentURL)
+
         file.save(save_path)
         item.ContentURL = f"/static/uploads/{filename}"
     elif "url" in data or "content_url" in data:
-        item.ContentURL = data.get("url") or data.get("content_url")
+        new_url = data.get("url") or data.get("content_url")
+        if new_url != item.ContentURL:
+            _delete_local_file(item.ContentURL)
+            item.ContentURL = new_url
 
     if "status" in data:
         req_status = str(data.get("status")).capitalize()
@@ -445,6 +473,7 @@ def _handle_edit_content(content_id):
 
     if "title" in data or "Title" in data:
         item.Title = data.get("title") or data.get("Title")
+
     if "description" in data or "Description" in data or "body" in data:
         item.Description = (
             data.get("description") or data.get("Description") or data.get("body")
@@ -499,6 +528,7 @@ def update_content_patch(content_id):
 
 # -------------------------------------------------------------------
 # 5. DELETE CONTENT
+# 5. DELETE CONTENT
 # -------------------------------------------------------------------
 @content_bp.delete("/<int:content_id>")
 @jwt_required()
@@ -521,6 +551,8 @@ def delete_content(content_id):
         return jsonify({"error": "Forbidden: Cannot delete this item"}), 403
 
     try:
+        _delete_local_file(item.ContentURL)
+
         db.session.delete(item)
         db.session.commit()
         return (
@@ -630,6 +662,10 @@ def flag_content(content_id):
 
     except Exception as e:
         db.session.rollback()
+        return (
+            jsonify({"error": "Failed to flag content", "details": str(e)}),
+            500,
+        )
         return (
             jsonify({"error": "Failed to flag content", "details": str(e)}),
             500,

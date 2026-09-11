@@ -1,7 +1,8 @@
-from marshmallow_sqlalchemy import SQLAlchemyAutoSchema, fields
-from models import (User, Profile, Category,Content, Comment, CommentReaction, ContentReaction,
-                    Subscription,Wishlist,Share,Notification,ContentReport
-                    )
+from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
+from app.models import (
+    User, Profile, Category, Content, Comment, CommentReaction, 
+    ContentReaction, Subscription, Bookmark, Share, Notification, ContentReport
+)
 from app.extensions import db
 
 class UserSchema(SQLAlchemyAutoSchema):
@@ -19,14 +20,12 @@ class ProfileSchema(SQLAlchemyAutoSchema):
         sqla_session = db.session
         include_fk = True
 
-
 class CategorySchema(SQLAlchemyAutoSchema):
     class Meta:
         model = Category
         load_instance = True
         sqla_session = db.session
         include_fk = True
-
 
 class ContentSchema(SQLAlchemyAutoSchema):
     class Meta:
@@ -36,14 +35,12 @@ class ContentSchema(SQLAlchemyAutoSchema):
         include_relationships = True
         include_fk = True
 
-
 class CommentSchema(SQLAlchemyAutoSchema):
     class Meta:
         model = Comment
         load_instance = True
         sqla_session = db.session
         include_fk = True
-
 
 class ContentReactionSchema(SQLAlchemyAutoSchema):
     class Meta:
@@ -52,14 +49,12 @@ class ContentReactionSchema(SQLAlchemyAutoSchema):
         sqla_session = db.session
         include_fk = True
 
-
 class CommentReactionSchema(SQLAlchemyAutoSchema):
     class Meta:
         model = CommentReaction
         load_instance = True
         sqla_session = db.session
         include_fk = True
-
 
 class SubscriptionSchema(SQLAlchemyAutoSchema):
     class Meta:
@@ -68,14 +63,12 @@ class SubscriptionSchema(SQLAlchemyAutoSchema):
         sqla_session = db.session
         include_fk = True
 
-
-class WishlistSchema(SQLAlchemyAutoSchema):
+class BookmarkSchema(SQLAlchemyAutoSchema):
     class Meta:
-        model = Wishlist
+        model = Bookmark
         load_instance = True
         sqla_session = db.session
         include_fk = True
-
 
 class ShareSchema(SQLAlchemyAutoSchema):
     class Meta:
@@ -84,7 +77,6 @@ class ShareSchema(SQLAlchemyAutoSchema):
         sqla_session = db.session
         include_fk = True
 
-
 class NotificationSchema(SQLAlchemyAutoSchema):
     class Meta:
         model = Notification
@@ -92,14 +84,12 @@ class NotificationSchema(SQLAlchemyAutoSchema):
         sqla_session = db.session
         include_fk = True
 
-
 class ContentReportSchema(SQLAlchemyAutoSchema):
     class Meta:
         model = ContentReport
         load_instance = True
         sqla_session = db.session
         include_fk = True
-
 
 user_schema = UserSchema()
 users_schema = UserSchema(many=True)
@@ -117,8 +107,8 @@ comment_reaction_schema = CommentReactionSchema()
 comment_reactions_schema = CommentReactionSchema(many=True)
 subscription_schema = SubscriptionSchema()
 subscriptions_schema = SubscriptionSchema(many=True)
-wishlist_schema = WishlistSchema()
-wishlists_schema = WishlistSchema(many=True)
+bookmark_schema = BookmarkSchema()
+bookmarks_schema = BookmarkSchema(many=True)
 share_schema = ShareSchema()
 shares_schema = ShareSchema(many=True)
 notification_schema = NotificationSchema()

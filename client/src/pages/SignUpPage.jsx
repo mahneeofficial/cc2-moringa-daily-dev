@@ -15,7 +15,7 @@ export default function SignUpPage() {
   // Password Checklist Dismissal State
   const [showChecklist, setShowChecklist] = useState(true);
 
-  // Account type: "user" (learner), "tech_writer" or "Admin"
+  // Account type: "user" (learner) or "tech_writer"
   const [role, setRole] = useState('user');
 
   const [errorMsg, setErrorMsg] = useState('');
@@ -67,8 +67,7 @@ export default function SignUpPage() {
       if (data.user) {
         localStorage.setItem('user', JSON.stringify(data.user));
       }
-      // Admins land on their dashboard, everyone else on the feed
-      navigate(String(data.user?.role || role).toLowerCase() === 'admin' ? '/admin' : '/');
+      navigate('/');
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -136,7 +135,6 @@ export default function SignUpPage() {
               className="w-full px-3.5 py-2.5 pr-10 rounded-lg bg-white border border-line text-sm focus:outline-none focus:border-brand-500 text-navy"
             />
             
-            {/* Hide/Unhide Toggle Button */}
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
@@ -152,7 +150,7 @@ export default function SignUpPage() {
           </div>
         </div>
 
-        {/* PASSWORD REQUIREMENT CHECKLIST BOX (Disappears when clicked inside) */}
+        {/* PASSWORD REQUIREMENT CHECKLIST BOX */}
         {showChecklist && (
           <div 
             onClick={() => setShowChecklist(false)}
@@ -203,14 +201,13 @@ export default function SignUpPage() {
           </div>
         </div>
 
-        {/* ACCOUNT TYPE SELECTOR — lets an admin sign up directly */}
+        {/* ACCOUNT TYPE SELECTOR — Learner & Tech Writer only */}
         <div>
           <label className="block text-xs font-medium text-navy/70 mb-1.5">Account type</label>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             {[
               { value: 'user', label: 'Learner', hint: 'Read, react & post' },
               { value: 'tech_writer', label: 'Tech Writer', hint: 'Publish instantly' },
-              { value: 'Admin', label: 'Admin', hint: 'Full moderation' },
             ].map((opt) => (
               <button
                 key={opt.value}

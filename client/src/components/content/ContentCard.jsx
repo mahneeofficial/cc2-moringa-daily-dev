@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Video, Headphones, FileText, Heart } from "lucide-react";
 import { timeAgo } from "../../utils/format";
@@ -12,29 +12,54 @@ const TYPE_TAG_COLOR = {
   article: "bg-surface text-navy/70",
 };
 
-export default function ContentCard({ item }) {
-  const TypeIcon = TYPE_ICON[item.type] || FileText;
-  const durationLabel = item.duration || item.readTime;
+export default function ContentCard(props) {
+  // Extract item safely whether passed as `item`, `post`, or `content`
+  const currentItem = props?.item || props?.post || props?.content;
 
-  const [likes, setLikes] = useState(item.likes_count ?? 0);
-  const [liked, setLiked] = useState(Boolean(item.is_liked));
+  // React hooks must run unconditionally
+  const [likes, setLikes] = useState(() => Number(currentItem?.likes_count ?? currentItem?.likes ?? 0));
+  const [liked, setLiked] = useState(() => Boolean(currentItem?.is_liked || currentItem?.isLiked));
 
-  // Instagram-style optimistic toggle: the heart flips instantly, the API
-  // call follows, and we reconcile with the server's answer.
+  useEffect(() => {
+    if (currentItem) {
+      setLikes(Number(currentItem?.likes_count ?? currentItem?.likes ?? 0));
+      setLiked(Boolean(currentItem?.is_liked || currentItem?.isLiked));
+    }
+  }, [currentItem]);
+
+  // Guard check: return null if no item object was provided
+  if (!currentItem || typeof currentItem !== "object") {
+    return null;
+  }
+
+  // Safe property extraction
+  const rawType = currentItem?.type || currentItem?.content_type || currentItem?.Type || "article";
+  const normalizedType = String(rawType).toLowerCase();
+  
+  const TypeIcon = TYPE_ICON[normalizedType] || FileText;
+  const typeLabel = TYPE_LABEL[normalizedType] || "Article";
+  const tagColor = TYPE_TAG_COLOR[normalizedType] || TYPE_TAG_COLOR.article;
+  
+  const durationLabel = currentItem?.duration || currentItem?.readTime;
+  const itemId = currentItem?.id || currentItem?.content_id || currentItem?.ContentID;
+
   async function handleLike(e) {
     e.preventDefault();
     e.stopPropagation();
+    if (!itemId) return;
+
     const nextLiked = !liked;
     setLiked(nextLiked);
     setLikes((n) => Math.max(0, n + (nextLiked ? 1 : -1)));
+
     try {
-      const summary = await react(item.id, "like");
+      const summary = await react(itemId, "like");
       if (summary) {
         setLiked(summary.userReaction === "like");
         setLikes(summary.likes ?? summary.likes_count ?? likes);
       }
     } catch {
-      // revert on failure
+      // Revert on failure
       setLiked(!nextLiked);
       setLikes((n) => Math.max(0, n + (nextLiked ? -1 : 1)));
     }
@@ -42,13 +67,13 @@ export default function ContentCard({ item }) {
 
   return (
     <Link
-      to={`/content/${item.id}`}
+      to={itemId ? `/content/${itemId}` : "#"}
       className="group block rounded-xl overflow-hidden border border-line bg-white hover:border-brand-500/50 hover:shadow-lg transition"
     >
       <div className="relative aspect-video bg-surface overflow-hidden">
         <img
-          src={item.thumbnail || item.content_image}
-          alt=""
+          src={currentItem.thumbnail || currentItem.content_image || currentItem.media_url || ""}
+          alt={currentItem.title || "Content thumbnail"}
           loading="lazy"
           className="w-full h-full object-cover group-hover:scale-[1.02] transition duration-300"
         />
@@ -57,9 +82,9 @@ export default function ContentCard({ item }) {
             {durationLabel}
           </span>
         )}
-        {item.status && item.status !== "Published" && item.status !== "approved" && (
+        {currentItem.status && currentItem.status !== "Published" && currentItem.status !== "approved" && (
           <span className="absolute top-2.5 left-2.5 text-[10px] font-mono uppercase text-amber-300 bg-black/80 rounded px-1.5 py-0.5">
-            {item.status}
+            {currentItem.status}
           </span>
         )}
 
@@ -82,23 +107,29 @@ export default function ContentCard({ item }) {
 
       <div className="p-4">
         <div className="flex items-center gap-2 mb-2.5">
-          <span className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded ${TYPE_TAG_COLOR[item.type]}`}>
+          <span className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded ${tagColor}`}>
             <TypeIcon className="w-3 h-3" strokeWidth={2} />
-            {TYPE_LABEL[item.type]}
+            {typeLabel}
           </span>
-          <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-surface text-muted">
-            {item.category?.name}
-          </span>
+          {currentItem.category?.name && (
+            <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-surface text-muted">
+              {currentItem.category.name}
+            </span>
+          )}
         </div>
 
         <h3 className="font-display font-bold text-navy group-hover:text-brand-400 leading-snug text-lg transition">
-          {item.title}
+          {currentItem.title}
         </h3>
 
         <div className="flex items-center gap-2 mt-3 text-xs text-muted">
-          <span>{item.author?.username}</span>
-          <span>·</span>
-          <span>{timeAgo(item.createdAt)}</span>
+          <span>{currentItem.author?.username || currentItem.author_name || "Author"}</span>
+          {currentItem.createdAt && (
+            <>
+              <span>·</span>
+              <span>{timeAgo(currentItem.createdAt)}</span>
+            </>
+          )}
         </div>
       </div>
     </Link>

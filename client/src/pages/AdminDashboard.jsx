@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users, FileWarning, Flag, Check, X, Ban, CheckCircle2 } from "lucide-react";
+import { Users, FileWarning, Flag, Check, X, Ban, CheckCircle2, Loader2 } from "lucide-react";
 import { listUsers, toggleUserActive, listPendingContent, listReports, resolveReport } from "../services/adminApi";
 import { approveContent, flagContent } from "../services/contentApi";
 import { roleLabel, roleColorClass, timeAgo } from "../utils/format";
@@ -26,7 +26,7 @@ export default function AdminDashboard() {
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm border-b-2 -mb-px transition ${
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm border-b-2 -mb-px transition font-medium ${
               tab === id ? "border-sky-600 text-sky-600" : "border-transparent text-muted hover:text-navy"
             }`}
           >
@@ -45,68 +45,109 @@ export default function AdminDashboard() {
 function ContentQueueTab() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
 
-  function load() {
+  async function load() {
     setLoading(true);
-    listPendingContent().then((data) => {
-      setItems(data);
+    try {
+      const data = await listPendingContent();
+      setItems(data || []);
+    } catch (err) {
+      console.error("Failed to fetch pending content:", err);
+    } finally {
       setLoading(false);
-    });
+    }
   }
-  useEffect(load, []);
+
+  useEffect(() => {
+    load();
+  }, []);
 
   async function handleApprove(id) {
-    await approveContent(id);
-    load();
-  }
-  async function handleFlag(id) {
-    await flagContent(id);
-    load();
+    setProcessingId(id);
+    try {
+      await approveContent(id);
+      await load();
+    } catch (err) {
+      console.error("Failed to approve content:", err);
+    } finally {
+      setProcessingId(null);
+    }
   }
 
-  if (loading) return null;
+  async function handleFlag(id) {
+    setProcessingId(id);
+    try {
+      await flagContent(id);
+      await load();
+    } catch (err) {
+      console.error("Failed to flag content:", err);
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading queue...
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return <EmptyState icon={CheckCircle2} title="Queue is clear" description="No content is waiting on review right now." />;
   }
 
   return (
     <div className="space-y-3">
-      {items.map((item) => (
-        <div key={item.id} className="p-4 rounded-xl border border-line bg-white">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[11px] font-mono uppercase text-muted">{item.category?.name}</span>
-                <span
-                  className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 border ${
-                    item.status === "Archived" || item.status === "flagged" ? "text-red-600 border-red-300" : "text-amber-600 border-amber-400"
-                  }`}
-                >
-                  {item.status}
-                </span>
+      {items.map((item) => {
+        const categoryName = item.categories?.[0]?.name || item.category?.name || "Uncategorized";
+        const authorName = item.author?.username || item.author || "Unknown";
+        const isProcessing = processingId === item.id;
+
+        return (
+          <div key={item.id} className="p-4 rounded-xl border border-line bg-white shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-mono uppercase text-muted">{categoryName}</span>
+                  <span
+                    className={`text-[10px] font-mono uppercase rounded px-1.5 py-0.5 border ${
+                      item.status?.toLowerCase() === "archived" || item.status?.toLowerCase() === "flagged"
+                        ? "text-red-600 border-red-300 bg-red-50"
+                        : "text-amber-600 border-amber-400 bg-amber-50"
+                    }`}
+                  >
+                    {item.status}
+                  </span>
+                </div>
+                <h3 className="font-display font-semibold text-navy">{item.title}</h3>
+                <p className="text-xs text-muted mt-1">
+                  by {authorName} · {timeAgo(item.createdAt)}
+                </p>
               </div>
-              <h3 className="font-display font-semibold text-navy">{item.title}</h3>
-              <p className="text-xs text-muted mt-1">
-                by {item.author?.username || item.author} · {timeAgo(item.createdAt)}
-              </p>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button
-                onClick={() => handleApprove(item.id)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-              >
-                <Check className="w-3.5 h-3.5" /> Approve
-              </button>
-              <button
-                onClick={() => handleFlag(item.id)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20"
-              >
-                <X className="w-3.5 h-3.5" /> Flag
-              </button>
+
+              <div className="flex gap-2 shrink-0">
+                <button
+                  disabled={isProcessing}
+                  onClick={() => handleApprove(item.id)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 border border-emerald-500/30 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50 transition"
+                >
+                  {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Approve
+                </button>
+                <button
+                  disabled={isProcessing}
+                  onClick={() => handleFlag(item.id)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-50 border border-red-500/30 text-red-600 hover:bg-red-100 disabled:opacity-50 transition"
+                >
+                  {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />} Flag
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -114,27 +155,48 @@ function ContentQueueTab() {
 function UsersTab() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
 
-  function load() {
+  async function load() {
     setLoading(true);
-    listUsers().then((data) => {
-      setUsers(data);
+    try {
+      const data = await listUsers();
+      setUsers(data || []);
+    } catch (err) {
+      console.error("Failed to list users:", err);
+    } finally {
       setLoading(false);
-    });
+    }
   }
-  useEffect(load, []);
+
+  useEffect(() => {
+    load();
+  }, []);
 
   async function handleToggle(id) {
-    await toggleUserActive(id);
-    load();
+    setProcessingId(id);
+    try {
+      await toggleUserActive(id);
+      await load();
+    } catch (err) {
+      console.error("Failed to toggle user status:", err);
+    } finally {
+      setProcessingId(null);
+    }
   }
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading users...
+      </div>
+    );
+  }
 
   return (
-    <div className="border border-line rounded-xl overflow-hidden">
+    <div className="border border-line rounded-xl overflow-hidden bg-white shadow-sm">
       <table className="w-full text-sm">
-        <thead className="bg-surface/95 text-muted text-[11px] uppercase font-mono">
+        <thead className="bg-surface/95 text-muted text-[11px] uppercase font-mono border-b border-line">
           <tr>
             <th className="text-left px-4 py-2.5 font-medium">Username</th>
             <th className="text-left px-4 py-2.5 font-medium">Role</th>
@@ -143,29 +205,35 @@ function UsersTab() {
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
-          {users.map((u) => (
-            <tr key={u.id}>
-              <td className="px-4 py-3 text-navy">{u.username}</td>
-              <td className={`px-4 py-3 font-mono text-xs ${roleColorClass(u.role)}`}>{roleLabel(u.role)}</td>
-              <td className="px-4 py-3">
-                <span className={`text-xs font-mono ${u.isActive ? "text-emerald-400" : "text-muted"}`}>
-                  {u.isActive ? "Active" : "Deactivated"}
-                </span>
-              </td>
-              <td className="px-4 py-3 text-right">
-                <button
-                  onClick={() => handleToggle(u.id)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition ${
-                    u.isActive
-                      ? "border-red-500/30 text-red-400 hover:bg-red-500/10"
-                      : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
-                  }`}
-                >
-                  <Ban className="w-3 h-3" /> {u.isActive ? "Deactivate" : "Reactivate"}
-                </button>
-              </td>
-            </tr>
-          ))}
+          {users.map((u) => {
+            const isProcessing = processingId === u.id;
+
+            return (
+              <tr key={u.id} className="hover:bg-slate-50/50 transition">
+                <td className="px-4 py-3 text-navy font-medium">{u.username}</td>
+                <td className={`px-4 py-3 font-mono text-xs ${roleColorClass(u.role)}`}>{roleLabel(u.role)}</td>
+                <td className="px-4 py-3">
+                  <span className={`text-xs font-mono ${u.isActive ? "text-emerald-600" : "text-slate-400"}`}>
+                    {u.isActive ? "Active" : "Deactivated"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button
+                    disabled={isProcessing}
+                    onClick={() => handleToggle(u.id)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition disabled:opacity-50 ${
+                      u.isActive
+                        ? "border-red-500/30 text-red-600 bg-red-50 hover:bg-red-100"
+                        : "border-emerald-500/30 text-emerald-600 bg-emerald-50 hover:bg-emerald-100"
+                    }`}
+                  >
+                    {isProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
+                    {u.isActive ? "Deactivate" : "Reactivate"}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -175,50 +243,86 @@ function UsersTab() {
 function ReportsTab() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState(null);
 
-  function load() {
+  async function load() {
     setLoading(true);
-    listReports().then((data) => {
-      setReports(data);
+    try {
+      const data = await listReports();
+      setReports(data || []);
+    } catch (err) {
+      console.error("Failed to list reports:", err);
+    } finally {
       setLoading(false);
-    });
+    }
   }
-  useEffect(load, []);
+
+  useEffect(() => {
+    load();
+  }, []);
 
   async function handleResolve(id) {
-    await resolveReport(id);
-    load();
+    setProcessingId(id);
+    try {
+      await resolveReport(id);
+      await load();
+    } catch (err) {
+      console.error("Failed to resolve report:", err);
+    } finally {
+      setProcessingId(null);
+    }
   }
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted">
+        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading reports...
+      </div>
+    );
+  }
+
   if (reports.length === 0) {
     return <EmptyState icon={Flag} title="No reports" description="Content flagged by the community will show up here." />;
   }
 
   return (
     <div className="space-y-3">
-      {reports.map((r) => (
-        <div key={r.id} className="p-4 rounded-xl border border-line bg-white">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm text-navy">{r.content?.title}</p>
-              <p className="text-xs text-muted mt-1">Reported by {r.reporter?.username} · {timeAgo(r.createdAt)}</p>
-              <p className="text-xs text-muted mt-2 italic">"{r.reason}"</p>
+      {reports.map((r) => {
+        const title = r.contentTitle || r.content?.title || "Untitled Content";
+        const reporterName = r.reporterUsername || r.reporter?.username || `User #${r.reportedBy || "Unknown"}`;
+        const isResolved = r.status && r.status.toLowerCase() === "resolved";
+        const isProcessing = processingId === r.id;
+
+        return (
+          <div key={r.id} className="p-4 rounded-xl border border-line bg-white shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-navy">{title}</p>
+                <p className="text-xs text-muted mt-0.5">
+                  Reported by <span className="font-medium text-slate-700">{reporterName}</span> · {timeAgo(r.createdAt)}
+                </p>
+                <p className="text-xs text-slate-600 mt-2 italic bg-slate-50 p-2 rounded border border-slate-100">
+                  "{r.reason}"
+                </p>
+              </div>
+              {!isResolved ? (
+                <button
+                  disabled={isProcessing}
+                  onClick={() => handleResolve(r.id)}
+                  className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 border border-emerald-500/30 text-emerald-600 hover:bg-emerald-100 disabled:opacity-50 transition"
+                >
+                  {isProcessing && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Mark resolved
+                </button>
+              ) : (
+                <span className="text-[11px] font-mono text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded shrink-0">
+                  Resolved
+                </span>
+              )}
             </div>
-            {r.status && r.status.toLowerCase() !== "resolved" ? (
-              <button
-                onClick={() => handleResolve(r.id)}
-                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
-              >
-                Mark resolved
-              </button>
-            ) : (
-              <span className="text-[11px] font-mono text-muted shrink-0">Resolved</span>
-            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
-

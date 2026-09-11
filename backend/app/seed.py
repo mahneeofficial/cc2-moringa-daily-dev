@@ -5,6 +5,7 @@ from faker import Faker
 from app import create_app
 from app.extensions import db
 from app.models import (
+    Bookmark,  # Fixed: Changed Wishlist to Bookmark
     Category,
     Comment,
     CommentReaction,
@@ -16,7 +17,6 @@ from app.models import (
     Share,
     Subscription,
     User,
-    Wishlist,
     content_categories,
 )
 
@@ -55,7 +55,7 @@ def seed_database():
             Comment.query.delete()
             ContentReport.query.delete()
             Notification.query.delete()
-            Wishlist.query.delete()
+            Bookmark.query.delete()  # Fixed: Changed Wishlist to Bookmark
             Share.query.delete()
             Subscription.query.delete()
             Content.query.delete()
@@ -131,13 +131,13 @@ def seed_database():
                     ContentType=random.choice(content_types),
                     ContentURL=fake.url(),
                     Status=random.choice(content_statuses),
-                    IsApproved=True
+                    IsApproved=True,
                 )
 
                 # Safely set ViewsCount/LikesCount only if the model has those columns
-                if hasattr(content_item, 'ViewsCount'):
+                if hasattr(content_item, "ViewsCount"):
                     content_item.ViewsCount = random.randint(10, 500)
-                elif hasattr(content_item, 'views_count'):
+                elif hasattr(content_item, "views_count"):
                     content_item.views_count = random.randint(10, 500)
 
                 # Attach 1 to 2 relevant categories

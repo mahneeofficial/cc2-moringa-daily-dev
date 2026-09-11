@@ -23,8 +23,17 @@ def generate_ai_text():
         return jsonify({"error": "AI features unavailable: google-genai package is not installed (pip install google-genai)"}), 503
 
     api_key = os.getenv("GEMINI_API_KEY")
+    # Treat the .env.example placeholder as "not configured yet" so the
+    # auto-created .env (dev.sh copies the template) doesn't send
+    # 'paste_your_gemini_key_here' to Google as a real key.
+    if api_key and "paste_your" in api_key.lower():
+        api_key = None
     if not api_key:
-        return jsonify({"error": "GEMINI_API_KEY missing in backend/.env"}), 500
+        return jsonify({
+            "error": "GEMINI_API_KEY is not set yet. Open backend/.env and "
+                     "replace the placeholder with a free key from "
+                     "https://aistudio.google.com/apikey, then restart the backend."
+        }), 500
 
     # 1. Fetch site posts context safely
     site_context = ""
