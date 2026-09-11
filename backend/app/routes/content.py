@@ -15,6 +15,17 @@ DEFAULT_COVER = (
 )
 BASE_URL = "http://127.0.0.1:5001"
 
+# Banned terms array (Add Moringa policy terms / inappropriate words here)
+FORBIDDEN_WORDS = [
+    "abuse", "cheat", "plagiarize", "exploit", "spam", "hate",
+    # Add school-specific policy terms here
+]
+
+def check_policy_violations(title, description):
+    """Returns True if the title or description violates guidelines."""
+    text_to_check = f"{title} {description}".lower()
+    return any(word.lower() in text_to_check for word in FORBIDDEN_WORDS)
+
 
 def safe_get_user_id():
     """Extract integer user ID safely from JWT identity."""
@@ -79,7 +90,7 @@ def list_content():
         in: query
         type: string
         default: Published
-        enum: [Published, Draft, Archived, all]
+        enum: [Published, Draft, Archived, Pending, all]
       - name: type
         in: query
         type: string
@@ -199,21 +210,7 @@ def list_content():
 # -------------------------------------------------------------------
 @content_bp.get("/<int:content_id>")
 def get_single_content(content_id):
-    """Get single content details by Content ID.
-    ---
-    tags:
-      - Content
-    parameters:
-      - name: content_id
-        in: path
-        type: integer
-        required: true
-    responses:
-      200:
-        description: Content details retrieved.
-      404:
-        description: Content not found.
-    """
+    """Get single content details by Content ID."""
     item = db.session.get(Content, content_id)
     if not item:
         return jsonify({"error": "Content not found"}), 404
@@ -275,45 +272,15 @@ def get_single_content(content_id):
 @content_bp.post("")
 @jwt_required()
 def create_content():
-    """Create a new content post.
-    ---
-    tags:
-      - Content
-    security:
-      - BearerAuth: []
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - title
-          properties:
-            title:
-              type: string
-            description:
-              type: string
-            content_type:
-              type: string
-              enum: [Article, Video, Audio, Image]
-            category_id:
-              type: integer
-            status:
-              type: string
-              enum: [Draft, Published, Archived]
-    responses:
-      201:
-        description: Content created successfully.
-      400:
-        description: Missing required fields.
-      401:
-        description: Unauthorized.
-    """
+    """Create a new content post."""
     try:
         user_id = safe_get_user_id()
         if not user_id:
             return jsonify({"error": "Unauthorized user"}), 401
+
+        current_user = db.session.get(User, user_id)
+        if not current_user:
+            return jsonify({"error": "User not found"}), 404
 
         if request.is_json:
             data = request.get_json() or {}
@@ -349,12 +316,16 @@ def create_content():
             file.save(save_path)
             file_url = f"/static/uploads/{filename}"
 
-        req_status = str(data.get("status", "")).capitalize()
-        status = (
-            req_status
-            if req_status in ["Draft", "Published", "Archived"]
-            else "Published"
-        )
+        # Enforce workflow based on user role
+        normalized_role = str(current_user.Role).lower().replace(" ", "_") if current_user.Role else ""
+        if normalized_role in ["admin", "tech_writer"]:
+            req_status = str(data.get("status", "")).capitalize()
+            status = req_status if req_status in ["Draft", "Published", "Archived"] else "Published"
+            is_approved = True if status == "Published" else False
+        else:
+            # Regular user submissions must be approved by Admin or Tech Writer
+            status = "Pending"
+            is_approved = False
 
         new_content = Content(
             Title=title,
@@ -364,6 +335,8 @@ def create_content():
             Status=status,
             UserID=user_id,
         )
+        if hasattr(new_content, "IsApproved"):
+            new_content.IsApproved = is_approved
 
         if category_id:
             try:
@@ -376,16 +349,22 @@ def create_content():
         db.session.add(new_content)
         db.session.commit()
 
-        try:
-            _notify_subscribers(new_content)
-        except Exception:
-            db.session.rollback()
+        if status == "Published":
+            try:
+                _notify_subscribers(new_content)
+            except Exception:
+                db.session.rollback()
 
         return (
             jsonify({
-                "message": "Content submitted successfully!",
+                "message": (
+                    "Content submitted successfully and published!"
+                    if status == "Published"
+                    else "Content submitted successfully and is pending approval."
+                ),
                 "content_id": new_content.ContentID,
                 "status": new_content.Status,
+                "is_approved": is_approved,
             }),
             201,
         )
@@ -416,7 +395,8 @@ def _handle_edit_content(content_id):
     if not current_user:
         return jsonify({"error": "User not found"}), 404
 
-    if item.UserID != current_user.UserID and current_user.Role != "Admin":
+    normalized_role = str(current_user.Role).lower().replace(" ", "_") if current_user.Role else ""
+    if item.UserID != current_user.UserID and normalized_role != "admin":
         return (
             jsonify({"error": "Forbidden: Cannot edit another user's content"}),
             403,
@@ -460,7 +440,7 @@ def _handle_edit_content(content_id):
 
     if "status" in data:
         req_status = str(data.get("status")).capitalize()
-        if req_status in ["Draft", "Published", "Archived"]:
+        if req_status in ["Draft", "Published", "Archived", "Pending"]:
             item.Status = req_status
 
     if "title" in data or "Title" in data:
@@ -508,80 +488,12 @@ def _handle_edit_content(content_id):
 @content_bp.put("/<int:content_id>")
 @jwt_required()
 def update_content_put(content_id):
-    """Replace/Update content item.
-    ---
-    tags:
-      - Content
-    security:
-      - BearerAuth: []
-    parameters:
-      - name: content_id
-        in: path
-        type: integer
-        required: true
-      - in: body
-        name: body
-        schema:
-          type: object
-          properties:
-            title:
-              type: string
-            description:
-              type: string
-            type:
-              type: string
-            category_id:
-              type: integer
-            status:
-              type: string
-    responses:
-      200:
-        description: Content updated successfully.
-      403:
-        description: Forbidden.
-      404:
-        description: Content not found.
-    """
     return _handle_edit_content(content_id)
 
 
 @content_bp.patch("/<int:content_id>")
 @jwt_required()
 def update_content_patch(content_id):
-    """Partially update content item.
-    ---
-    tags:
-      - Content
-    security:
-      - BearerAuth: []
-    parameters:
-      - name: content_id
-        in: path
-        type: integer
-        required: true
-      - in: body
-        name: body
-        schema:
-          type: object
-          properties:
-            title:
-              type: string
-            description:
-              type: string
-            type:
-              type: string
-            category_id:
-              type: integer
-            status:
-              type: string
-    responses:
-      200:
-        description: Content updated successfully.
-      403:
-        description: Forbidden.
-      404:
-        description: Content not found.
-    """
     return _handle_edit_content(content_id)
 
 
@@ -591,25 +503,6 @@ def update_content_patch(content_id):
 @content_bp.delete("/<int:content_id>")
 @jwt_required()
 def delete_content(content_id):
-    """Delete content item by ID.
-    ---
-    tags:
-      - Content
-    security:
-      - BearerAuth: []
-    parameters:
-      - name: content_id
-        in: path
-        type: integer
-        required: true
-    responses:
-      200:
-        description: Content deleted successfully.
-      403:
-        description: Forbidden.
-      404:
-        description: Content not found.
-    """
     item = db.session.get(Content, content_id)
     if not item:
         return jsonify({"error": "Content not found"}), 404
@@ -623,7 +516,8 @@ def delete_content(content_id):
     if not current_user:
         return jsonify({"error": "User not found"}), 404
 
-    if item.UserID != current_user.UserID and current_user.Role != "Admin":
+    normalized_role = str(current_user.Role).lower().replace(" ", "_") if current_user.Role else ""
+    if item.UserID != current_user.UserID and normalized_role != "admin":
         return jsonify({"error": "Forbidden: Cannot delete this item"}), 403
 
     try:
@@ -645,40 +539,83 @@ def delete_content(content_id):
 
 
 # -------------------------------------------------------------------
-# 6. FLAG CONTENT
+# 6. APPROVE CONTENT (ADMIN & TECH WRITER)
 # -------------------------------------------------------------------
-@content_bp.patch("/<int:content_id>/flag")
+@content_bp.patch("/<int:content_id>/approve")
 @jwt_required()
-@role_required("Admin", "tech_writer")
-def flag_content(content_id):
-    """Flag content and move status to Archived.
-    ---
-    tags:
-      - Content
-    security:
-      - BearerAuth: []
-    parameters:
-      - name: content_id
-        in: path
-        type: integer
-        required: true
-    responses:
-      200:
-        description: Content flagged and archived.
-      403:
-        description: Forbidden (Admin / Tech Writer required).
-      404:
-        description: Content not found.
-    """
+@role_required("Admin", "Tech Writer", "tech_writer")
+def approve_content(content_id):
+    """Approve content post and change status to Published."""
     item = db.session.get(Content, content_id)
     if not item:
         return jsonify({"error": "Content not found"}), 404
 
     try:
+        item.Status = "Published"
+        if hasattr(item, "IsApproved"):
+            item.IsApproved = True
+        if hasattr(item, "RejectionReason"):
+            item.RejectionReason = None
+
+        if getattr(item, "UserID", None):
+            notif = Notification(
+                UserID=item.UserID,
+                ContentID=item.ContentID,
+                Message=f"Your submission '{item.Title}' has been approved and published!",
+            )
+            db.session.add(notif)
+
+        db.session.commit()
+        _notify_subscribers(item)
+
+        return (
+            jsonify({
+                "message": "Content approved and published successfully.",
+                "content_id": content_id,
+                "status": item.Status,
+                "is_approved": True,
+            }),
+            200,
+        )
+    except Exception as e:
+        db.session.rollback()
+        return (
+            jsonify({"error": "Failed to approve content", "details": str(e)}),
+            500,
+        )
+
+
+# -------------------------------------------------------------------
+# 7. FLAG CONTENT (ADMIN & TECH WRITER)
+# -------------------------------------------------------------------
+@content_bp.patch("/<int:content_id>/flag")
+@jwt_required()
+@role_required("Admin", "Tech Writer", "tech_writer")
+def flag_content(content_id):
+    """Flag content and move status to Archived/Rejected."""
+    item = db.session.get(Content, content_id)
+    if not item:
+        return jsonify({"error": "Content not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    reason = data.get("reason", "Violated platform rules and guidelines.")
+
+    try:
         if hasattr(item, "IsApproved"):
             item.IsApproved = False
+        if hasattr(item, "RejectionReason"):
+            item.RejectionReason = reason
 
         item.Status = "Archived"
+
+        if getattr(item, "UserID", None):
+            notif = Notification(
+                UserID=item.UserID,
+                ContentID=item.ContentID,
+                Message=f"Your content '{item.Title}' was flagged/archived. Reason: {reason}",
+            )
+            db.session.add(notif)
+
         db.session.commit()
 
         return (

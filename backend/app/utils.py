@@ -1,56 +1,38 @@
 from functools import wraps
 from flask import jsonify
 from flask_jwt_extended import get_jwt_identity
-
 from app.extensions import db
 from app.models import User
 
 
-def iso_utc(dt):
-    """ISO-8601 string that JavaScript's Date parses as UTC.
-
-    SQLite returns naive datetimes (stored as UTC). Without the 'Z' suffix,
-    `new Date("2026-09-04T01:00:00")` is parsed as LOCAL time — in Nairobi
-    (UTC+3) every brand-new post displayed as "3h ago". Appending 'Z' fixes
-    relative-time rendering everywhere.
-    """
-    if not dt:
-        return None
-    if getattr(dt, "tzinfo", None) is not None:
-        return dt.isoformat()
-    return dt.isoformat() + "Z"
-
-
-def role_required(*allowed_roles):
-    """Restrict an endpoint (already behind @jwt_required()) to certain roles.
-
-    The JWT identity only stores the user id, so the role is looked up in the
-    database. Matching is case-insensitive ("Admin" == "admin").
-    """
-    allowed = {str(r).lower() for r in allowed_roles}
-
+def role_required(*roles):
+    """Decorator to enforce role-based access control with casing-insensitive matching."""
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             identity = get_jwt_identity()
+            if not identity:
+                return jsonify({"error": "Unauthorized user"}), 401
 
+            user_id = identity.get("id") or identity.get("UserID") if isinstance(identity, dict) else identity
             try:
-                if isinstance(identity, dict):
-                    user_id = int(identity.get("id"))
-                else:
-                    user_id = int(identity)
-            except (TypeError, ValueError):
-                return jsonify({"error": "Invalid or missing identity"}), 401
+                user_id = int(user_id)
+            except (ValueError, TypeError):
+                return jsonify({"error": "Invalid user identity"}), 400
 
             user = db.session.get(User, user_id)
             if not user:
-                return jsonify({"error": "User not found"}), 401
+                return jsonify({"error": "User not found"}), 404
 
-            user_role = str(getattr(user, "Role", "user") or "user").lower()
+            # Normalize roles: lowercase and replace spaces with underscores
+            normalized_allowed = [str(r).lower().replace(" ", "_") for r in roles]
+            user_role = str(user.Role).lower().replace(" ", "_") if user.Role else ""
 
-            if user_role not in allowed:
-                return jsonify({"error": "Unauthorized access for this role"}), 403
+            if user_role not in normalized_allowed:
+                return jsonify({"error": "Forbidden: Insufficient permissions"}), 403
 
             return fn(*args, **kwargs)
+
         return wrapper
+
     return decorator
